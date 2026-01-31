@@ -1,0 +1,7 @@
+## Interface: 100206
+## Title: DiceTracker
+## Notes: A neural network-based dice outcome predictor.
+## Author: SevenGod
+## Version: 1.0
+## SavedVariables: DiceTrackerDB, DiceTrackerSavedVariables
+DiceTracker.lua
