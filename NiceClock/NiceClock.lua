@@ -2496,6 +2496,7 @@ function frame:CreateSettingsFrame()
     end, nil, nil, tsText or ts, "BOTTOMLEFT", "TOPLEFT")
 
     local columnOffset = LAYOUT.col2 - LAYOUT.left
+    local columnWidth = (f:GetWidth() - (LAYOUT.left * 2)) / 2
     local rowSpacing = -26
     local startOffset = -30
     local leftAnchor = ht
@@ -2522,6 +2523,11 @@ function frame:CreateSettingsFrame()
         "TOPLEFT",
         "TOPLEFT"
       )
+      if cb.text then
+        cb.text:SetWidth(math.max(140, columnWidth - 30))
+        cb.text:SetJustifyH("LEFT")
+        cb.text:SetWordWrap(true)
+      end
       if column == 2 then
         rightAnchor = cb
       else
