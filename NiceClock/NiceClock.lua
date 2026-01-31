@@ -2504,7 +2504,7 @@ function frame:CreateSettingsFrame()
 
     local function AddQoLCheckbox(label, settingKey, column, onToggle)
       local anchor = column == 2 and rightAnchor or leftAnchor
-      local offsetX = column == 2 and columnOffset or 0
+      local offsetX = (column == 2 and anchor == ht) and columnOffset or 0
       local offsetY = (anchor == ht) and startOffset or rowSpacing
       local cb = CreateCheckbox(
         p,
