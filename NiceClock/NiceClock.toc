@@ -2,7 +2,7 @@
 ## Title: NiceClock
 ## Notes: Just a handy addon
 ## Author: Renvulf
-## SavedVariables: TimeDB
-## SavedVariablesPerCharacter: TimePerCharDB
-## IconTexture: Interface\AddOns\Time\Timeicon.tga
-Time.lua
+## SavedVariables: NiceClockDB
+## SavedVariablesPerCharacter: NiceClockPerCharDB
+## IconTexture: Interface\AddOns\NiceClock\NiceClockicon.tga
+NiceClock.lua

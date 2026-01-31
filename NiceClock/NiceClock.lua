@@ -1,5 +1,5 @@
 --[[
-  Time.lua
+  NiceClock.lua
   Display a macOS-style clock in bottom-left with a seed icon and minimap icon,
   plus a tabbed settings panel with Clock Settings, Alarm, Quality of Life,
   Track, and Combat sections.
@@ -18,15 +18,26 @@
 
 -- Retrieve our addon name; the second return (addonTable) is unused
 local addonName = ...
-TimeDB = TimeDB or {}                -- global settings across characters
-TimePerCharDB = TimePerCharDB or {}  -- per-character settings
+local legacyTimeDB = _G.TimeDB
+local legacyTimePerCharDB = _G.TimePerCharDB
+
+NiceClockDB = NiceClockDB or {}                -- global settings across characters
+NiceClockPerCharDB = NiceClockPerCharDB or {}  -- per-character settings
+
+if next(NiceClockDB) == nil and type(legacyTimeDB) == "table" then
+  NiceClockDB = legacyTimeDB
+end
+
+if next(NiceClockPerCharDB) == nil and type(legacyTimePerCharDB) == "table" then
+  NiceClockPerCharDB = legacyTimePerCharDB
+end
 
 -- ─── Combat Fonts Detection ──────────────────────────────────────────────────
 -- Font groups with their respective font files. These correspond to the folders
 -- inside the addon directory.
 local COMBAT_FONT_GROUPS = {
   ["Fun"] = {
-    path  = "Interface\\AddOns\\Time\\Fun\\",
+    path  = "Interface\\AddOns\\NiceClock\\Fun\\",
     fonts = {
       -- Existing fonts
       "04b.ttf", "Barriecito.ttf", "Green Fuz.otf", "Guroes.ttf",
@@ -39,7 +50,7 @@ local COMBAT_FONT_GROUPS = {
     },
   },
   ["Future"] = {
-    path  = "Interface\\AddOns\\Time\\Future\\",
+    path  = "Interface\\AddOns\\NiceClock\\Future\\",
     fonts = {
       -- Existing fonts
       "914Solid.ttf", "ChopSic.ttf", "Digital.ttf", "FastHand.ttf",
@@ -50,7 +61,7 @@ local COMBAT_FONT_GROUPS = {
   },
   ["Movie/Game"] = {
     -- Directory renamed from Movie:Game to avoid the colon
-    path  = "Interface\\AddOns\\Time\\MovieGame\\",
+    path  = "Interface\\AddOns\\NiceClock\\MovieGame\\",
     fonts = {
       -- Existing fonts
       "Deltarune.ttf", "Halo.ttf", "HarryP.ttf", "Pokemon.ttf",
@@ -63,7 +74,7 @@ local COMBAT_FONT_GROUPS = {
     },
   },
   ["Easy-to-Read"] = {
-    path  = "Interface\\AddOns\\Time\\Easy-to-Read\\",
+    path  = "Interface\\AddOns\\NiceClock\\Easy-to-Read\\",
     fonts = {
       -- Existing fonts
       "AlteHaasGroteskBold.ttf", "Expressway.ttf", "NotoSans_Condensed-Bold.ttf",
@@ -83,9 +94,9 @@ local COMBAT_FONT_GROUPS = {
     -- To cover all cases we attempt to load numbered fonts from any of these
     -- locations.
     paths = {
-      "Interface\\AddOns\\Time\\Custom\\",
-      "Interface\\AddOns\\Time\\CombatFonts\\",
-      "Interface\\AddOns\\Time\\Custom(1-20)\\",
+      "Interface\\AddOns\\NiceClock\\Custom\\",
+      "Interface\\AddOns\\NiceClock\\CombatFonts\\",
+      "Interface\\AddOns\\NiceClock\\Custom(1-20)\\",
     },
     fonts = {},
   },
@@ -121,7 +132,7 @@ for group, data in pairs(COMBAT_FONT_GROUPS) do
           -- remains stable regardless of the actual folder used.
           relPath = "Custom/" .. fname
         else
-          relPath = path:match("Interface\\AddOns\\Time\\(.+)$") or (group .. "/" .. fname)
+          relPath = path:match("Interface\\AddOns\\NiceClock\\(.+)$") or (group .. "/" .. fname)
           relPath = relPath:gsub("\\", "/")
         end
         absPath = path
@@ -138,8 +149,8 @@ for group, data in pairs(COMBAT_FONT_GROUPS) do
 end
 
 -- ─── Frame & Font Path ────────────────────────────────────────────────────────
-local frame        = CreateFrame("Frame", "TimeFrame", UIParent)
-local FONT_FOLDER  = "Interface\\AddOns\\Time\\ClockFonts\\"
+local frame        = CreateFrame("Frame", "NiceClockFrame", UIParent)
+local FONT_FOLDER  = "Interface\\AddOns\\NiceClock\\ClockFonts\\"
 local AVAILABLE_FONTS = {
   -- Complete list of fonts found in ClockFonts
   "Acadian",
@@ -210,33 +221,33 @@ local DEFAULTS = {
   -- END TRACKING DEFAULTS
 }
 for k, v in pairs(DEFAULTS) do
-  if TimeDB[k] == nil then TimeDB[k] = v end
+  if NiceClockDB[k] == nil then NiceClockDB[k] = v end
 end
 
 -- Ensure tracking tables exist even on upgraded installs.
-if type(TimeDB.playedByCharacter) ~= "table" then
-  TimeDB.playedByCharacter = {}
+if type(NiceClockDB.playedByCharacter) ~= "table" then
+  NiceClockDB.playedByCharacter = {}
 end
 
 -- Migrate legacy single alarm fields to new alarm table
-if TimeDB.alarms == nil then TimeDB.alarms = {} end
+if NiceClockDB.alarms == nil then NiceClockDB.alarms = {} end
 do
-  local h, m = (TimeDB.alarmTime or ""):match("^(%d?%d):(%d%d)$")
+  local h, m = (NiceClockDB.alarmTime or ""):match("^(%d?%d):(%d%d)$")
   if h and m then
-    table.insert(TimeDB.alarms, {hour = tonumber(h), min = tonumber(m), text = TimeDB.alarmReminder or ""})
+    table.insert(NiceClockDB.alarms, {hour = tonumber(h), min = tonumber(m), text = NiceClockDB.alarmReminder or ""})
   end
-  if TimeDB.alarmTimestamp and TimeDB.alarmTimestamp > 0 then
-    table.insert(TimeDB.alarms, {timestamp = TimeDB.alarmTimestamp, text = TimeDB.alarmReminder or ""})
+  if NiceClockDB.alarmTimestamp and NiceClockDB.alarmTimestamp > 0 then
+    table.insert(NiceClockDB.alarms, {timestamp = NiceClockDB.alarmTimestamp, text = NiceClockDB.alarmReminder or ""})
   end
-  TimeDB.alarmTime = ""
-  TimeDB.alarmTimestamp = 0
-  TimeDB.alarmReminder = ""
+  NiceClockDB.alarmTime = ""
+  NiceClockDB.alarmTimestamp = 0
+  NiceClockDB.alarmReminder = ""
 end
 
 -- Backward compatibility: migrate old bounceClock setting to waveClock
-if TimeDB.waveClock == nil and TimeDB.bounceClock ~= nil then
-  TimeDB.waveClock = TimeDB.bounceClock
-  TimeDB.bounceClock = nil
+if NiceClockDB.waveClock == nil and NiceClockDB.bounceClock ~= nil then
+  NiceClockDB.waveClock = NiceClockDB.bounceClock
+  NiceClockDB.bounceClock = nil
 end
 
 -- ─── Per-Character QoL & Combat Defaults ──────────────────────────────────────
@@ -250,15 +261,15 @@ local PERCHAR_DEFAULTS = {
   combatFont     = nil,  -- e.g. "3.ttf"
 }
 for k, v in pairs(PERCHAR_DEFAULTS) do
-  if TimePerCharDB[k] == nil then TimePerCharDB[k] = v end
+  if NiceClockPerCharDB[k] == nil then NiceClockPerCharDB[k] = v end
 end
 
 -- ─── Preload All Clock Fonts ─────────────────────────────────────────────────
--- must come *after* DEFAULTS so TimeDB.fontSize is valid
+-- must come *after* DEFAULTS so NiceClockDB.fontSize is valid
 for _, fname in ipairs(AVAILABLE_FONTS) do
   local path = FONT_FOLDER .. fname .. ".ttf"
   local preloadFont = CreateFont(addonName.."PreloadFont"..fname)
-  preloadFont:SetFont(path, TimeDB.fontSize, "")  -- empty-string flags
+  preloadFont:SetFont(path, NiceClockDB.fontSize, "")  -- empty-string flags
 end
 
 -- WoW already exposes the realm clock, so we no longer track a manual
@@ -324,7 +335,7 @@ function frame:GetCurrentCharacterPlayedSeconds()
   if not base or not at then
     -- Fallback: show last stored snapshot (stays static until a fresh snapshot arrives).
     local key = self:GetPlayerKey()
-    local stored = key and TimeDB.playedByCharacter and TimeDB.playedByCharacter[key]
+    local stored = key and NiceClockDB.playedByCharacter and NiceClockDB.playedByCharacter[key]
     if type(stored) == "number" then
       return stored
     end
@@ -343,10 +354,10 @@ end
 -- All-character /played total, summing only characters that have been logged
 -- into with NiceClock enabled.
 function frame:GetAllTrackedCharactersPlayedSeconds()
-  local tbl = TimeDB.playedByCharacter
+  local tbl = NiceClockDB.playedByCharacter
   if type(tbl) ~= "table" then
-    TimeDB.playedByCharacter = {}
-    tbl = TimeDB.playedByCharacter
+    NiceClockDB.playedByCharacter = {}
+    tbl = NiceClockDB.playedByCharacter
   end
 
   local sum, count = 0, 0
@@ -377,7 +388,7 @@ end
 -- This prevents the entire frame from shifting if it's anchored by CENTER.
 function frame:BuildStableTimeSample()
   local parts = {}
-  if TimeDB.showDate then
+  if NiceClockDB.showDate then
     -- Use a representative 3-letter day/month and a 2-digit day-of-month for max width.
     tinsert(parts, "Wed")
     tinsert(parts, "Sep")
@@ -385,14 +396,14 @@ function frame:BuildStableTimeSample()
   end
 
   local timeStr
-  if TimeDB.showSeconds then
+  if NiceClockDB.showSeconds then
     timeStr = "88:88:88"
   else
     timeStr = "88:88"
   end
   tinsert(parts, timeStr)
 
-  if not TimeDB.is24h then
+  if not NiceClockDB.is24h then
     tinsert(parts, "PM")
   end
 
@@ -404,11 +415,11 @@ end
 function frame:UpdateClockFrameSize()
   if not self.fs then return end
 
-  local iconSize = (TimeDB.fontSize or DEFAULTS.fontSize) * 2
+  local iconSize = (NiceClockDB.fontSize or DEFAULTS.fontSize) * 2
   local gap      = -10
   local pad      = 10
 
-  local showIcon = (not TimeDB.hideClock) and (not TimeDB.hideIcon)
+  local showIcon = (not NiceClockDB.hideClock) and (not NiceClockDB.hideIcon)
   local leftInset = showIcon and (iconSize + gap) or 0
 
   -- Measure text width using an invisible fontstring with identical font settings.
@@ -418,8 +429,8 @@ function frame:UpdateClockFrameSize()
     self.measureFS:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
   end
 
-  local fontFile = FONT_FOLDER .. (TimeDB.fontName or DEFAULTS.fontName) .. ".ttf"
-  pcall(self.measureFS.SetFont, self.measureFS, fontFile, TimeDB.fontSize, "")
+  local fontFile = FONT_FOLDER .. (NiceClockDB.fontName or DEFAULTS.fontName) .. ".ttf"
+  pcall(self.measureFS.SetFont, self.measureFS, fontFile, NiceClockDB.fontSize, "")
 
   -- Always measure using a stable sample string. This prevents the clock frame
   -- from "breathing" as digits change (seconds/minutes/hours) and keeps the
@@ -430,7 +441,7 @@ function frame:UpdateClockFrameSize()
   -- Round to whole pixels to avoid tiny per-frame width differences.
   local textWidth = math.ceil(self.measureFS:GetStringWidth() or 0)
   local frameWidth = leftInset + textWidth + pad
-  local frameHeight = showIcon and (iconSize + pad) or (TimeDB.fontSize + pad)
+  local frameHeight = showIcon and (iconSize + pad) or (NiceClockDB.fontSize + pad)
   frame:SetSize(frameWidth, frameHeight)
 end
 
@@ -443,7 +454,7 @@ end
 function frame:EnsureClockHitbox()
   if self._ensureClockHitboxRunning then return end
   if not self.fs then return end
-  if TimeDB.hideClock then return end
+  if NiceClockDB.hideClock then return end
 
   self._ensureClockHitboxRunning = true
   local tries = 0
@@ -531,27 +542,27 @@ end
 
 -- Utility: show tracking tooltip anchored to a frame
 function frame:ShowTrackingTooltip(anchor)
-  if not TimeDB.trackTooltip then return end
+  if not NiceClockDB.trackTooltip then return end
   GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
   local now = time()
   local sessionElapsed = now - (self.sessionStart or now)
-  if TimeDB.trackSession then
+  if NiceClockDB.trackSession then
     GameTooltip:AddLine("Session: " .. self:FormatSeconds(sessionElapsed))
   end
-  if TimeDB.trackDay then
-    local dayTotal = (TimeDB.daySeconds or 0) + sessionElapsed
+  if NiceClockDB.trackDay then
+    local dayTotal = (NiceClockDB.daySeconds or 0) + sessionElapsed
     GameTooltip:AddLine("Today: " .. self:FormatSeconds(dayTotal))
   end
-  if TimeDB.trackWeek then
-    local weekTotal = (TimeDB.weekSeconds or 0) + sessionElapsed
+  if NiceClockDB.trackWeek then
+    local weekTotal = (NiceClockDB.weekSeconds or 0) + sessionElapsed
     GameTooltip:AddLine("This Week: " .. self:FormatSeconds(weekTotal))
   end
-  if TimeDB.trackMonth then
-    local monthTotal = (TimeDB.monthSeconds or 0) + sessionElapsed
+  if NiceClockDB.trackMonth then
+    local monthTotal = (NiceClockDB.monthSeconds or 0) + sessionElapsed
     GameTooltip:AddLine("This Month: " .. self:FormatSeconds(monthTotal))
   end
-  if TimeDB.trackYear then
-    local yearTotal = (TimeDB.yearSeconds or 0) + sessionElapsed
+  if NiceClockDB.trackYear then
+    local yearTotal = (NiceClockDB.yearSeconds or 0) + sessionElapsed
     GameTooltip:AddLine("This Year: " .. self:FormatSeconds(yearTotal))
   end
   GameTooltip:Show()
@@ -560,8 +571,8 @@ end
 -- BEGIN FEATURE: helper for local time with optional timezone offset
 local function GetLocalTimeValue(fmt)
   local ts = time()
-  if TimeDB.timezoneOffset and TimeDB.timezoneOffset ~= 0 then
-    ts = ts + TimeDB.timezoneOffset * 3600
+  if NiceClockDB.timezoneOffset and NiceClockDB.timezoneOffset ~= 0 then
+    ts = ts + NiceClockDB.timezoneOffset * 3600
   end
   return date(fmt, ts)
 end
@@ -585,14 +596,14 @@ end
 -- ─── Clock Core ───────────────────────────────────────────────────────────────
 function frame:RestartTicker()
   if self.ticker then self.ticker:Cancel() end
-  local interval = TimeDB.showSeconds and 1 or 60
+  local interval = NiceClockDB.showSeconds and 1 or 60
   self.ticker = C_Timer.NewTicker(interval, function() self:UpdateTime() end)
 end
 
 -- Start color cycling for RGB clock
 function frame:StartRGBTicker()
   if self.rgbTicker then self.rgbTicker:Cancel() end
-  local alpha = (TimeDB.fontColor and TimeDB.fontColor[4]) or 1
+  local alpha = (NiceClockDB.fontColor and NiceClockDB.fontColor[4]) or 1
   self.rgbAngle = 0                               -- track angle for new strings
   local function applyColor(angle)
     local r = (math.sin(angle) + 1) / 2
@@ -635,7 +646,7 @@ end
 -- Start per-digit wave animation
 function frame:StartWaveTicker()
   if self.waveTicker then self.waveTicker:Cancel() end
-  local amp   = math.max(2, math.floor(TimeDB.fontSize * 0.2))
+  local amp   = math.max(2, math.floor(NiceClockDB.fontSize * 0.2))
   local angle = 0
   local phase = 0.4
   self.waveTicker = C_Timer.NewTicker(0.05, function()
@@ -660,17 +671,17 @@ end
 
 function frame:UpdateTime()
   local parts = {}
-  if TimeDB.showDate then
+  if NiceClockDB.showDate then
     -- Date elements always use the local clock
     tinsert(parts, date("%a"))
     tinsert(parts, date("%b"))
     tinsert(parts, tostring(tonumber(date("%e"))))
   end
 
-  if TimeDB.useServerTime then
+  if NiceClockDB.useServerTime then
     local h, m, s = GetServerClock()
     local hr
-    if TimeDB.is24h then
+    if NiceClockDB.is24h then
       hr = string.format("%02d", h)
     else
       local disp = h % 12
@@ -678,24 +689,24 @@ function frame:UpdateTime()
       hr = tostring(disp)
     end
     local min = string.format("%02d", m)
-    if TimeDB.showSeconds then
+    if NiceClockDB.showSeconds then
       local sec = string.format("%02d", s)
       tinsert(parts, string.format("%s:%s:%s", hr, min, sec))
     else
       tinsert(parts, string.format("%s:%s", hr, min))
     end
-    if not TimeDB.is24h then
+    if not NiceClockDB.is24h then
       tinsert(parts, h < 12 and "AM" or "PM")
     end
   else
-    local hr  = TimeDB.is24h and GetLocalTimeValue("%H") or GetLocalTimeValue("%I"):gsub("^0", "")
+    local hr  = NiceClockDB.is24h and GetLocalTimeValue("%H") or GetLocalTimeValue("%I"):gsub("^0", "")
     local min = GetLocalTimeValue("%M")
-    if TimeDB.showSeconds then
+    if NiceClockDB.showSeconds then
       tinsert(parts, string.format("%s:%s:%s", hr, min, GetLocalTimeValue("%S")))
     else
       tinsert(parts, string.format("%s:%s", hr, min))
     end
-    if not TimeDB.is24h then
+    if not NiceClockDB.is24h then
       tinsert(parts, GetLocalTimeValue("%p"))
     end
   end
@@ -708,14 +719,14 @@ function frame:UpdateTime()
     end
   end
   -- Handle wave display
-  if TimeDB.waveClock and not TimeDB.hideClock then
+  if NiceClockDB.waveClock and not NiceClockDB.hideClock then
     self:UpdateWaveStrings(text)
     self.fs:Hide()
   else
     if self.waveStrings then
       for _, ws in ipairs(self.waveStrings) do ws:Hide() end
     end
-    if not TimeDB.hideClock then self.fs:Show() end
+    if not NiceClockDB.hideClock then self.fs:Show() end
   end
   -- BEGIN FEATURE: update LDB feed
   if self.dataObject then
@@ -730,16 +741,16 @@ end
 -- Update or create per-character font strings for wave effect
 function frame:UpdateWaveStrings(text)
   self.waveStrings = self.waveStrings or {}
-  local fontFile = FONT_FOLDER .. (TimeDB.fontName or DEFAULTS.fontName) .. ".ttf"
-  local c = TimeDB.fontColor or {1,1,1,1}
+  local fontFile = FONT_FOLDER .. (NiceClockDB.fontName or DEFAULTS.fontName) .. ".ttf"
+  local c = NiceClockDB.fontColor or {1,1,1,1}
   -- When RGB mode is active, use the current RGB color for new strings
-  if TimeDB.rgbClock and type(self.rgbColor) == "table" then
+  if NiceClockDB.rgbClock and type(self.rgbColor) == "table" then
     c = self.rgbColor
   end
 
-  local iconSize = TimeDB.fontSize * 2
+  local iconSize = NiceClockDB.fontSize * 2
   local gap      = -10
-  local showIcon = (not TimeDB.hideClock) and (not TimeDB.hideIcon)
+  local showIcon = (not NiceClockDB.hideClock) and (not NiceClockDB.hideIcon)
   local startX   = showIcon and (iconSize + gap) or 0
   local x = startX
   for i = 1, #text do
@@ -751,7 +762,7 @@ function frame:UpdateWaveStrings(text)
       fs.baseY = 0
       fs.currentOffset = 0
     end
-    fs:SetFont(fontFile, TimeDB.fontSize, "")
+    fs:SetFont(fontFile, NiceClockDB.fontSize, "")
     fs:SetTextColor(unpack(c)) -- color already adjusted above
     fs:SetText(ch)
     fs:Show()
@@ -769,21 +780,21 @@ end
 function frame:ApplySettings()
   -- The frame components may not exist during very early loading
   if not self.fs then return end
-  if TimeDB.fontSize < 15 then TimeDB.fontSize = 15 end
+  if NiceClockDB.fontSize < 15 then NiceClockDB.fontSize = 15 end
 
-  local fontFile = FONT_FOLDER .. (TimeDB.fontName or DEFAULTS.fontName) .. ".ttf"
+  local fontFile = FONT_FOLDER .. (NiceClockDB.fontName or DEFAULTS.fontName) .. ".ttf"
 
   -- ── BEGIN FIX: Apply font and force redraw immediately ───────────────────
   -- Safely set the new font, then clear & re‐set the text to force the UI to redraw
   local style = ""
-  pcall(self.fs.SetFont, self.fs, fontFile, TimeDB.fontSize, style)
+  pcall(self.fs.SetFont, self.fs, fontFile, NiceClockDB.fontSize, style)
   local currentText = self.fs:GetText()
   self.fs:SetText("")                -- clear the text
   self.fs:SetText(currentText)       -- reset it, forcing an immediate redraw
   -- ── END FIX ─────────────────────────────────────────────────────────────
 
-  local c = TimeDB.fontColor
-  if type(c)~="table" or #c<4 then c={1,1,1,1}; TimeDB.fontColor=c end
+  local c = NiceClockDB.fontColor
+  if type(c)~="table" or #c<4 then c={1,1,1,1}; NiceClockDB.fontColor=c end
   -- Stop any existing RGB ticker before applying color changes
   self:StopRGBTicker()
 
@@ -797,7 +808,7 @@ function frame:ApplySettings()
   -- Update shadow font strings (used previously for glow effect)
   if self.shadows then
     for _, s in ipairs(self.shadows) do
-      pcall(s.SetFont, s, fontFile, TimeDB.fontSize, "")
+      pcall(s.SetFont, s, fontFile, NiceClockDB.fontSize, "")
       s:SetShadowColor(0, 0, 0, 0)
       s:SetShadowOffset(0, 0)
       s:SetTextColor(c[1], c[2], c[3], 0.3)
@@ -807,14 +818,14 @@ function frame:ApplySettings()
   end
 
   -- Start RGB color cycling if requested
-  if TimeDB.rgbClock then self:StartRGBTicker() end
+  if NiceClockDB.rgbClock then self:StartRGBTicker() end
 
-  local iconSize = TimeDB.fontSize * 2
+  local iconSize = NiceClockDB.fontSize * 2
   local gap      = -10
-  local descent  = -math.floor(TimeDB.fontSize * 0.19)
+  local descent  = -math.floor(NiceClockDB.fontSize * 0.19)
   local pad      = 10
 
-  local showIcon = (not TimeDB.hideClock) and (not TimeDB.hideIcon)
+  local showIcon = (not NiceClockDB.hideClock) and (not NiceClockDB.hideIcon)
   local leftInset = showIcon and (iconSize + gap) or 0
 
   self.fs:ClearAllPoints()
@@ -839,18 +850,18 @@ function frame:ApplySettings()
   self:UpdateTime()
   self:UpdateClockFrameSize()
 
-  if TimeDB.hideClock then
+  if NiceClockDB.hideClock then
     self.fs:Hide()
   else
     -- If wave mode is enabled, UpdateTime hides the main fs and draws waveStrings.
-    if not TimeDB.waveClock then self.fs:Show() end
+    if not NiceClockDB.waveClock then self.fs:Show() end
   end
 
   self:RestartTicker()
 
   -- Manage wave ticker based on setting
   self:StopWaveTicker()
-  if TimeDB.waveClock and not TimeDB.hideClock then
+  if NiceClockDB.waveClock and not NiceClockDB.hideClock then
     self:StartWaveTicker()
   end
 end
@@ -858,9 +869,9 @@ end
 -- ─── Draggable / Click-Through Logic ──────────────────────────────────────────
 function frame:ApplyMoveSettings()
   frame:ClearAllPoints()
-  if TimeDB.positionPoint then
-    frame:SetPoint(TimeDB.positionPoint, UIParent,
-                   TimeDB.positionRelPoint, TimeDB.positionX, TimeDB.positionY)
+  if NiceClockDB.positionPoint then
+    frame:SetPoint(NiceClockDB.positionPoint, UIParent,
+                   NiceClockDB.positionRelPoint, NiceClockDB.positionX, NiceClockDB.positionY)
   else
     -- BEGIN FIX: better default placement on first install
     -- Show the clock near the top-center so it is not hidden by action bars on older clients.
@@ -871,17 +882,17 @@ function frame:ApplyMoveSettings()
   if frame.fs then frame.fs:EnableMouse(false) end
   if frame.icon then frame.icon:EnableMouse(false) end
 
-  if TimeDB.allowMove then
+  if NiceClockDB.allowMove then
     frame:EnableMouse(true); frame:SetMovable(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", function(self)
       self:StopMovingOrSizing()
       local p,_,rp,x,y = self:GetPoint()
-      TimeDB.positionPoint    = p
-      TimeDB.positionRelPoint = rp
-      TimeDB.positionX        = x
-      TimeDB.positionY        = y
+      NiceClockDB.positionPoint    = p
+      NiceClockDB.positionRelPoint = rp
+      NiceClockDB.positionX        = x
+      NiceClockDB.positionY        = y
     end)
 
     if frame.iconButton then
@@ -894,10 +905,10 @@ function frame:ApplyMoveSettings()
       frame.iconButton:SetScript("OnDragStop", function(self)
         frame:StopMovingOrSizing()
         local p,_,rp,x,y = frame:GetPoint()
-        TimeDB.positionPoint    = p
-        TimeDB.positionRelPoint = rp
-        TimeDB.positionX        = x
-        TimeDB.positionY        = y
+        NiceClockDB.positionPoint    = p
+        NiceClockDB.positionRelPoint = rp
+        NiceClockDB.positionX        = x
+        NiceClockDB.positionY        = y
       end)
       -- END FIX
     end
@@ -921,12 +932,12 @@ function frame:CreateMinimapIcon()
   if self.minimapIcon then return end
   local f = self
 
-  local icon = CreateFrame("Button", "TimeMinimapButton", Minimap)
+  local icon = CreateFrame("Button", "NiceClockMinimapButton", Minimap)
   icon:SetSize(32,32)
   icon:ClearAllPoints()
-  icon:SetPoint(TimeDB.minimapAnchorPoint, Minimap, TimeDB.minimapRelativePoint, TimeDB.minimapX, TimeDB.minimapY)
+  icon:SetPoint(NiceClockDB.minimapAnchorPoint, Minimap, NiceClockDB.minimapRelativePoint, NiceClockDB.minimapX, NiceClockDB.minimapY)
   local t = icon:CreateTexture(nil,"BACKGROUND")
-  t:SetTexture("Interface\\AddOns\\Time\\TimeiconMM.png")
+  t:SetTexture("Interface\\AddOns\\NiceClock\\NiceClockiconMM.png")
   t:SetAllPoints(icon)
   icon.texture = t
   icon:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
@@ -953,15 +964,15 @@ function frame:CreateMinimapIcon()
     self:UnlockHighlight()
     self:SetScript("OnUpdate", nil)
     local p,_,rp,x,y = self:GetPoint()
-    TimeDB.minimapAnchorPoint   = p
-    TimeDB.minimapRelativePoint = rp
-    TimeDB.minimapX             = x
-    TimeDB.minimapY             = y
+    NiceClockDB.minimapAnchorPoint   = p
+    NiceClockDB.minimapRelativePoint = rp
+    NiceClockDB.minimapX             = x
+    NiceClockDB.minimapY             = y
   end)
 
   -- BEGIN MINIMAP ICON HOVER TOOLTIP
   icon:SetScript("OnEnter", function(self)
-    if TimeDB.trackTooltip then
+    if NiceClockDB.trackTooltip then
       frame:ShowTrackingTooltip(self)
     else
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -983,31 +994,31 @@ function frame:CreateLDB()
   local obj = ldb:NewDataObject(addonName, {
     type = "data source",
     text = "",
-    icon = "Interface\\AddOns\\Time\\Timeicon.tga",
+    icon = "Interface\\AddOns\\NiceClock\\NiceClockicon.tga",
   })
   obj.OnClick = function(_, btn)
     if btn == "LeftButton" then frame:ToggleSettings() end
   end
   obj.OnTooltipShow = function(tt)
     tt:AddLine(addonName)
-    if TimeDB.trackTooltip then
+    if NiceClockDB.trackTooltip then
       local now = time()
       local sessionElapsed = now - (frame.sessionStart or now)
-      if TimeDB.trackSession then tt:AddLine("Session: " .. frame:FormatSeconds(sessionElapsed)) end
-      if TimeDB.trackDay then
-        local total = (TimeDB.daySeconds or 0) + sessionElapsed
+      if NiceClockDB.trackSession then tt:AddLine("Session: " .. frame:FormatSeconds(sessionElapsed)) end
+      if NiceClockDB.trackDay then
+        local total = (NiceClockDB.daySeconds or 0) + sessionElapsed
         tt:AddLine("Today: " .. frame:FormatSeconds(total))
       end
-      if TimeDB.trackWeek then
-        local total = (TimeDB.weekSeconds or 0) + sessionElapsed
+      if NiceClockDB.trackWeek then
+        local total = (NiceClockDB.weekSeconds or 0) + sessionElapsed
         tt:AddLine("This Week: " .. frame:FormatSeconds(total))
       end
-      if TimeDB.trackMonth then
-        local total = (TimeDB.monthSeconds or 0) + sessionElapsed
+      if NiceClockDB.trackMonth then
+        local total = (NiceClockDB.monthSeconds or 0) + sessionElapsed
         tt:AddLine("This Month: " .. frame:FormatSeconds(total))
       end
-      if TimeDB.trackYear then
-        local total = (TimeDB.yearSeconds or 0) + sessionElapsed
+      if NiceClockDB.trackYear then
+        local total = (NiceClockDB.yearSeconds or 0) + sessionElapsed
         tt:AddLine("This Year: " .. frame:FormatSeconds(total))
       end
     else
@@ -1021,12 +1032,12 @@ end
 -- ─── QoL Settings ───────────────────────────────────────────────────────────
 function frame:ApplyQoLSettings()
   if not ObjectiveTrackerFrame then return end
-  if TimePerCharDB.hideTracker then
+  if NiceClockPerCharDB.hideTracker then
     ObjectiveTrackerFrame:Hide()
   else
     ObjectiveTrackerFrame:Show()
   end
-  ObjectiveTrackerFrame:SetScale(TimePerCharDB.trackerScale or 1)
+  ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
 end
 
 -- ─── Combat Settings ─────────────────────────────────────────────────────────
@@ -1038,14 +1049,14 @@ function frame:ApplyCombatSettings()
     {key="periodicDamage", cvar="floatingCombatTextPeriodicDamage"},
   }
   for _,o in ipairs(opts) do
-    if TimePerCharDB[o.key] ~= nil and SetCVar then
-      SetCVar(o.cvar, TimePerCharDB[o.key] and 1 or 0)
+    if NiceClockPerCharDB[o.key] ~= nil and SetCVar then
+      SetCVar(o.cvar, NiceClockPerCharDB[o.key] and 1 or 0)
     end
   end
-  if TimePerCharDB.combatFont then
+  if NiceClockPerCharDB.combatFont then
     local fontFile
-    if TimePerCharDB.combatFont:match("^Custom/") then
-      local fname = TimePerCharDB.combatFont:match("^Custom/(.+)$")
+    if NiceClockPerCharDB.combatFont:match("^Custom/") then
+      local fname = NiceClockPerCharDB.combatFont:match("^Custom/(.+)$")
       for _, base in ipairs(COMBAT_FONT_GROUPS["Custom"].paths) do
         local candidate = base .. fname
         local f = CreateFont(addonName.."TempApplyFont")
@@ -1058,7 +1069,7 @@ function frame:ApplyCombatSettings()
       end
     end
     if not fontFile then
-      fontFile = "Interface\\AddOns\\Time\\" .. TimePerCharDB.combatFont
+      fontFile = "Interface\\AddOns\\NiceClock\\" .. NiceClockPerCharDB.combatFont
     end
     _G["DAMAGE_TEXT_FONT"] = fontFile
     _G["COMBAT_TEXT_FONT"]  = fontFile
@@ -1086,7 +1097,7 @@ function frame:StartAlarm()
   end
 
   -- Play alarm sound using the most compatible API
-  local path = "Interface\\AddOns\\Time\\Alarm\\1.ogg"
+  local path = "Interface\\AddOns\\NiceClock\\Alarm\\1.ogg"
   local handle = SafePlaySound(path)
 
   self.alarmSound   = handle
@@ -1096,7 +1107,7 @@ function frame:StartAlarm()
     self.alarmTimer:Cancel()
     self.alarmTimer = nil
   end
-  local dur = TimeDB.alarmDuration or DEFAULTS.alarmDuration
+  local dur = NiceClockDB.alarmDuration or DEFAULTS.alarmDuration
   self.alarmTimer = C_Timer.NewTimer(dur, function() frame:StopAlarm() end)
 
   -- Create or show full-screen overlay
@@ -1129,15 +1140,15 @@ function frame:StartAlarm()
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
     text:SetWidth(1000)
-    local reminderFontSize = (TimeDB.fontSize or DEFAULTS.fontSize) * 2
+    local reminderFontSize = (NiceClockDB.fontSize or DEFAULTS.fontSize) * 2
     text:SetFont(STANDARD_TEXT_FONT, reminderFontSize, "OUTLINE")
     self.alarmText = text
   else
-    local reminderFontSize = (TimeDB.fontSize or DEFAULTS.fontSize) * 2
+    local reminderFontSize = (NiceClockDB.fontSize or DEFAULTS.fontSize) * 2
     self.alarmText:SetFont(STANDARD_TEXT_FONT, reminderFontSize, "OUTLINE")
   end
 
-  self.alarmText:SetText(TimeDB.alarmReminder or "")
+  self.alarmText:SetText(NiceClockDB.alarmReminder or "")
   self.alarmText:Show()
 
   -- Animate the reminder text color and position
@@ -1182,16 +1193,16 @@ function frame:StopAlarm()
   self.alarmPlaying = false
   if self.alarmText  then self.alarmText:Hide() end
   if self.alarmFrame then self.alarmFrame:Hide() end
-  TimeDB.alarmTime = ""
-  TimeDB.alarmTimestamp = 0
+  NiceClockDB.alarmTime = ""
+  NiceClockDB.alarmTimestamp = 0
 end
 
 -- ─── Alarm Polling ────────────────────────────────────────────────────────────
 function frame:CheckAlarm()
   -- BEGIN FEATURE: hourly chime support
-  if TimeDB.hourlyChime then
+  if NiceClockDB.hourlyChime then
     local h, m = nil, nil
-    if TimeDB.useServerTime then
+    if NiceClockDB.useServerTime then
       h, m = GetServerClock()
     else
       h = tonumber(GetLocalTimeValue("%H"))
@@ -1206,29 +1217,29 @@ function frame:CheckAlarm()
   end
   -- END FEATURE
 
-  if not TimeDB.alarms then return end
+  if not NiceClockDB.alarms then return end
   local now = GetServerTime and GetServerTime() or time()
   local h, m
-  if TimeDB.useServerTime then
+  if NiceClockDB.useServerTime then
     h, m = GetServerClock()
   else
     h = tonumber(GetLocalTimeValue("%H"))
     m = tonumber(GetLocalTimeValue("%M"))
   end
-  for i = #TimeDB.alarms, 1, -1 do
-    local a = TimeDB.alarms[i]
+  for i = #NiceClockDB.alarms, 1, -1 do
+    local a = NiceClockDB.alarms[i]
     if a.timestamp then
       if now >= a.timestamp and not self.alarmPlaying then
-        TimeDB.alarmReminder = a.text or ""
-        table.remove(TimeDB.alarms, i)
+        NiceClockDB.alarmReminder = a.text or ""
+        table.remove(NiceClockDB.alarms, i)
         self:StartAlarm()
         if self.RefreshAlarmList then self:RefreshAlarmList() end
         break
       end
     else
       if h == a.hour and m == a.min and not self.alarmPlaying then
-        TimeDB.alarmReminder = a.text or ""
-        table.remove(TimeDB.alarms, i)
+        NiceClockDB.alarmReminder = a.text or ""
+        table.remove(NiceClockDB.alarms, i)
         self:StartAlarm()
         if self.RefreshAlarmList then self:RefreshAlarmList() end
         break
@@ -1276,23 +1287,23 @@ end
 
 -- Add an absolute alarm (hour/minute) to the queue
 function frame:AddAbsoluteAlarm(h, m, text)
-  TimeDB.alarms = TimeDB.alarms or {}
-  table.insert(TimeDB.alarms, {hour = h, min = m, text = text or ""})
+  NiceClockDB.alarms = NiceClockDB.alarms or {}
+  table.insert(NiceClockDB.alarms, {hour = h, min = m, text = text or ""})
   if self.RefreshAlarmList then self:RefreshAlarmList() end
 end
 
 -- Add a relative alarm in minutes to the queue
 function frame:AddRelativeAlarm(minutes, text)
-  TimeDB.alarms = TimeDB.alarms or {}
+  NiceClockDB.alarms = NiceClockDB.alarms or {}
   local now = GetServerTime and GetServerTime() or time()
-  table.insert(TimeDB.alarms, {timestamp = now + minutes * 60, text = text or ""})
+  table.insert(NiceClockDB.alarms, {timestamp = now + minutes * 60, text = text or ""})
   if self.RefreshAlarmList then self:RefreshAlarmList() end
 end
 
 -- Remove an alarm by index
 function frame:RemoveAlarm(idx)
-  if not TimeDB.alarms then return end
-  table.remove(TimeDB.alarms, idx)
+  if not NiceClockDB.alarms then return end
+  table.remove(NiceClockDB.alarms, idx)
   if self.RefreshAlarmList then self:RefreshAlarmList() end
 end
 
@@ -1300,15 +1311,15 @@ end
 function frame:RefreshAlarmList()
   if not self.alarmListEntries then return end
   local now = GetServerTime and GetServerTime() or time()
-  TimeDB.alarms = TimeDB.alarms or {}
+  NiceClockDB.alarms = NiceClockDB.alarms or {}
   -- Sort alarms by next trigger time
-  table.sort(TimeDB.alarms, function(a, b)
+  table.sort(NiceClockDB.alarms, function(a, b)
     local at = a.timestamp or (a.hour * 60 + a.min)
     local bt = b.timestamp or (b.hour * 60 + b.min)
     return at < bt
   end)
   for i, btn in ipairs(self.alarmListEntries) do
-    local a = TimeDB.alarms[i]
+    local a = NiceClockDB.alarms[i]
     if a then
       btn.alarmIndex = i
       local display
@@ -1341,7 +1352,7 @@ function frame:HandleCalendarAlarm(...)
       if CalendarEventGetTitle then title = CalendarEventGetTitle() end
     end
   end
-  TimeDB.alarmReminder = title or "Calendar Event"
+  NiceClockDB.alarmReminder = title or "Calendar Event"
   self:StartAlarm()
 end
 
@@ -1356,13 +1367,13 @@ function frame:TIME_PLAYED_MSG(event, totalTime, levelTime)
   self.playedReceivedAt  = (GetTime and GetTime()) or time()
 
   -- Self-heal for upgraded installs or partial saved variables.
-  if type(TimeDB.playedByCharacter) ~= "table" then
-    TimeDB.playedByCharacter = {}
+  if type(NiceClockDB.playedByCharacter) ~= "table" then
+    NiceClockDB.playedByCharacter = {}
   end
 
   local key = self:GetPlayerKey()
   if key and key ~= "" then
-    TimeDB.playedByCharacter[key] = totalTime
+    NiceClockDB.playedByCharacter[key] = totalTime
   end
 
   -- Refresh tracking display immediately if the panel is open.
@@ -1382,7 +1393,7 @@ function frame:ToggleSettings()
 end
 
 function frame:CreateSettingsFrame()
-  local f = CreateFrame("Frame","TimeSettingsFrame",UIParent,"BackdropTemplate")
+  local f = CreateFrame("Frame","NiceClockSettingsFrame",UIParent,"BackdropTemplate")
   -- Enlarged to provide additional padding for the combat options panel
   f:SetSize(420,600)
   f:SetPoint("CENTER")
@@ -1399,7 +1410,7 @@ function frame:CreateSettingsFrame()
   f:SetFrameStrata("DIALOG"); f:Hide()
   tinsert(UISpecialFrames, f:GetName())
 
-  local overlay = CreateFrame("Frame","TimeSettingsOverlay",UIParent)
+  local overlay = CreateFrame("Frame","NiceClockSettingsOverlay",UIParent)
   overlay:SetAllPoints(UIParent)
   overlay:EnableMouse(true)
   overlay:SetFrameStrata("HIGH")
@@ -1481,67 +1492,67 @@ function frame:CreateSettingsFrame()
   do
     local p = panels[1]
     -- Font Size Slider
-    local fs = CreateFrame("Slider","TimeFontSizeSlider",p,"OptionsSliderTemplate")
+    local fs = CreateFrame("Slider","NiceClockFontSizeSlider",p,"OptionsSliderTemplate")
     fs:SetPoint("TOPLEFT", LAYOUT.left, LAYOUT.top)
     fs:SetMinMaxValues(15,48); fs:SetValueStep(1); fs:SetWidth(300)
-    fs:SetValue(TimeDB.fontSize)
+    fs:SetValue(NiceClockDB.fontSize)
     fs:SetScript("OnValueChanged", function(self, v)
       v = math.floor(v + 0.5)
-      TimeDB.fontSize = v
+      NiceClockDB.fontSize = v
       _G[self:GetName() .. "Text"]:SetText("Font Size: " .. v)
       frame:ApplySettings()
     end)
-    _G["TimeFontSizeSliderLow"]:SetText("15")
-    _G["TimeFontSizeSliderHigh"]:SetText("48")
-    _G["TimeFontSizeSliderText"]:SetText("Font Size: "..TimeDB.fontSize)
+    _G["NiceClockFontSizeSliderLow"]:SetText("15")
+    _G["NiceClockFontSizeSliderHigh"]:SetText("48")
+    _G["NiceClockFontSizeSliderText"]:SetText("Font Size: "..NiceClockDB.fontSize)
 
     -- Show Date Checkbox
-    local sd = CreateCheckbox(p, "TimeShowDateCB", "Show Date", LAYOUT.left, LAYOUT.top - 50, TimeDB.showDate, function(self)
-      TimeDB.showDate = self:GetChecked()
+    local sd = CreateCheckbox(p, "NiceClockShowDateCB", "Show Date", LAYOUT.left, LAYOUT.top - 50, NiceClockDB.showDate, function(self)
+      NiceClockDB.showDate = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- 24h Format Checkbox
-    local h24 = CreateCheckbox(p, "Time24hCB", "24h Format", LAYOUT.col2, LAYOUT.top - 50, TimeDB.is24h, function(self)
-      TimeDB.is24h = self:GetChecked()
+    local h24 = CreateCheckbox(p, "NiceClock24hCB", "24h Format", LAYOUT.col2, LAYOUT.top - 50, NiceClockDB.is24h, function(self)
+      NiceClockDB.is24h = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- Show Seconds Checkbox
-    local ss = CreateCheckbox(p, "TimeShowSecCB", "Show Seconds", LAYOUT.left, LAYOUT.top - 80, TimeDB.showSeconds, function(self)
-      TimeDB.showSeconds = self:GetChecked()
+    local ss = CreateCheckbox(p, "NiceClockShowSecCB", "Show Seconds", LAYOUT.left, LAYOUT.top - 80, NiceClockDB.showSeconds, function(self)
+      NiceClockDB.showSeconds = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- BEGIN FEATURE: server time & hourly chime checkboxes
-    local ust = CreateCheckbox(p, "TimeUseServerCB", "Use Server Time", LAYOUT.left, LAYOUT.top - 110, TimeDB.useServerTime)
+    local ust = CreateCheckbox(p, "NiceClockUseServerCB", "Use Server Time", LAYOUT.left, LAYOUT.top - 110, NiceClockDB.useServerTime)
 
-    local chime = CreateCheckbox(p, "TimeChimeCB", "Hourly Chime", LAYOUT.col2, LAYOUT.top - 110, TimeDB.hourlyChime, function(self)
-      TimeDB.hourlyChime = self:GetChecked()
+    local chime = CreateCheckbox(p, "NiceClockChimeCB", "Hourly Chime", LAYOUT.col2, LAYOUT.top - 110, NiceClockDB.hourlyChime, function(self)
+      NiceClockDB.hourlyChime = self:GetChecked()
     end)
     -- END FEATURE
 
     -- Time Zone Offset Slider
-    local tz = CreateFrame("Slider", "TimeTZSlider", p, "OptionsSliderTemplate")
+    local tz = CreateFrame("Slider", "NiceClockTZSlider", p, "OptionsSliderTemplate")
     tz:SetPoint("TOPLEFT", LAYOUT.left, LAYOUT.top - 160)
     tz:SetMinMaxValues(-12, 14)
     tz:SetValueStep(1)
     tz:SetObeyStepOnDrag(true)
     tz:SetWidth(300)
-    tz:SetValue(TimeDB.timezoneOffset or 0)
+    tz:SetValue(NiceClockDB.timezoneOffset or 0)
     tz:SetScript("OnValueChanged", function(self, v)
-      TimeDB.timezoneOffset = v
+      NiceClockDB.timezoneOffset = v
       _G[self:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", v))
       frame:UpdateTime()
     end)
     _G[tz:GetName() .. "Low"]:SetText("-12")
     _G[tz:GetName() .. "High"]:SetText("+14")
-    _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", TimeDB.timezoneOffset or 0))
+    _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", NiceClockDB.timezoneOffset or 0))
 
     ust:SetScript("OnClick", function(self)
-      TimeDB.useServerTime = self:GetChecked()
+      NiceClockDB.useServerTime = self:GetChecked()
       if self:GetChecked() then
-        TimeDB.timezoneOffset = 0
+        NiceClockDB.timezoneOffset = 0
         tz:SetValue(0)
         tz:Disable()
         tz:SetAlpha(0.5)
@@ -1549,11 +1560,11 @@ function frame:CreateSettingsFrame()
         tz:Enable()
         tz:SetAlpha(1)
       end
-      _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", TimeDB.timezoneOffset or 0))
+      _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", NiceClockDB.timezoneOffset or 0))
       frame:UpdateTime()
     end)
 
-    if TimeDB.useServerTime then
+    if NiceClockDB.useServerTime then
       tz:SetValue(0)
       tz:Disable()
       tz:SetAlpha(0.5)
@@ -1563,16 +1574,16 @@ function frame:CreateSettingsFrame()
     end
 
     -- Color Picker Button
-    local cb = CreateFrame("Button","TimeColorButton",p,"UIPanelButtonTemplate")
+    local cb = CreateFrame("Button","NiceClockColorButton",p,"UIPanelButtonTemplate")
     cb:SetSize(100,22)
     cb:SetPoint("TOPLEFT", LAYOUT.col2, LAYOUT.top - 80)
     cb:SetText("Font Color")
     cb:SetScript("OnClick",function()
       if LoadAddOn then LoadAddOn("Blizzard_ColorPicker") end
-      local oR,oG,oB,oA = unpack(TimeDB.fontColor)
+      local oR,oG,oB,oA = unpack(NiceClockDB.fontColor)
       local function live()
         local r,g,b = ColorPickerFrame:GetColorRGB()
-        TimeDB.fontColor = {r,g,b,oA}
+        NiceClockDB.fontColor = {r,g,b,oA}
         frame.fs:SetTextColor(r,g,b,oA)
         if frame.icon then frame.icon:SetVertexColor(r,g,b,oA) end
         if frame.shadows then
@@ -1582,7 +1593,7 @@ function frame:CreateSettingsFrame()
         end
       end
       local function cancel()
-        TimeDB.fontColor = {oR,oG,oB,oA}
+        NiceClockDB.fontColor = {oR,oG,oB,oA}
         frame.fs:SetTextColor(oR,oG,oB,oA)
         if frame.icon then frame.icon:SetVertexColor(oR,oG,oB,oA) end
         if frame.shadows then
@@ -1601,7 +1612,7 @@ function frame:CreateSettingsFrame()
     end)
 
     -- Clock Font Dropdown
-    local fontDropdown = CreateFrame("Frame", "TimeFontDropdown", p, "UIDropDownMenuTemplate")
+    local fontDropdown = CreateFrame("Frame", "NiceClockFontDropdown", p, "UIDropDownMenuTemplate")
     fontDropdown:SetPoint("TOPLEFT", LAYOUT.left, LAYOUT.top - 220)
     UIDropDownMenu_SetWidth(fontDropdown, 150)
     UIDropDownMenu_Initialize(fontDropdown, function(self, level)
@@ -1610,26 +1621,26 @@ function frame:CreateSettingsFrame()
         info.text = fname
         info.value = fname
         info.func = function(self)
-          TimeDB.fontName = self.value
+          NiceClockDB.fontName = self.value
           UIDropDownMenu_SetSelectedValue(fontDropdown, self.value)
           UIDropDownMenu_SetText(fontDropdown, self.value)
           -- BEGIN FIX: use unified ApplySettings for immediate redraw
           frame:ApplySettings()
           -- END FIX
         end
-        info.checked = (TimeDB.fontName == fname)
+        info.checked = (NiceClockDB.fontName == fname)
         UIDropDownMenu_AddButton(info)
       end
     end)
     local ddLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ddLabel:SetPoint("BOTTOMLEFT", fontDropdown, "TOPLEFT", 0, 2)
     ddLabel:SetText("Clock Font")
-    UIDropDownMenu_SetSelectedValue(fontDropdown, TimeDB.fontName)
-    UIDropDownMenu_SetText(fontDropdown, TimeDB.fontName)
+    UIDropDownMenu_SetSelectedValue(fontDropdown, NiceClockDB.fontName)
+    UIDropDownMenu_SetText(fontDropdown, NiceClockDB.fontName)
 
     hooksecurefunc("UIDropDownMenu_SetSelectedValue", function(self, value)
       if self == fontDropdown then
-        TimeDB.fontName = value
+        NiceClockDB.fontName = value
         frame:ApplySettings()
       end
     end)
@@ -1638,9 +1649,9 @@ function frame:CreateSettingsFrame()
     local spacing = 25
 
     -- Move Clock Checkbox
-    local mv = CreateCheckbox(p, "TimeAllowMoveCB", "Tick to move clock", LAYOUT.left, startY, TimeDB.allowMove,
+    local mv = CreateCheckbox(p, "NiceClockAllowMoveCB", "Tick to move clock", LAYOUT.left, startY, NiceClockDB.allowMove,
       function(self)
-        TimeDB.allowMove = self:GetChecked()
+        NiceClockDB.allowMove = self:GetChecked()
         frame:ApplyMoveSettings()
       end,
       function(self)
@@ -1652,32 +1663,32 @@ function frame:CreateSettingsFrame()
     )
 
     -- Hide Clock Checkbox
-    local hc = CreateCheckbox(p, "TimeHideClockCB", "Tick to hide clock", LAYOUT.left, startY - spacing, TimeDB.hideClock, function(self)
-      TimeDB.hideClock = self:GetChecked()
+    local hc = CreateCheckbox(p, "NiceClockHideClockCB", "Tick to hide clock", LAYOUT.left, startY - spacing, NiceClockDB.hideClock, function(self)
+      NiceClockDB.hideClock = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- Hide Icon Checkbox
-    local hi = CreateCheckbox(p, "TimeHideIconCB", "Tick to hide icon", LAYOUT.left, startY - 2*spacing, TimeDB.hideIcon, function(self)
-      TimeDB.hideIcon = self:GetChecked()
+    local hi = CreateCheckbox(p, "NiceClockHideIconCB", "Tick to hide icon", LAYOUT.left, startY - 2*spacing, NiceClockDB.hideIcon, function(self)
+      NiceClockDB.hideIcon = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- RGB Clock Checkbox
-    local rgb = CreateCheckbox(p, "TimeRGBClockCB", "RGB Clock", LAYOUT.left, startY - 3*spacing, TimeDB.rgbClock, function(self)
-      TimeDB.rgbClock = self:GetChecked()
+    local rgb = CreateCheckbox(p, "NiceClockRGBClockCB", "RGB Clock", LAYOUT.left, startY - 3*spacing, NiceClockDB.rgbClock, function(self)
+      NiceClockDB.rgbClock = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- Wave Checkbox (renamed from "Bounce") aligned with other options
     -- Moved up to avoid overlapping the Default button
-    local bc = CreateCheckbox(p, "TimeWaveCB", "Wave", LAYOUT.col2, startY - 3*spacing, TimeDB.waveClock, function(self)
-      TimeDB.waveClock = self:GetChecked()
+    local bc = CreateCheckbox(p, "NiceClockWaveCB", "Wave", LAYOUT.col2, startY - 3*spacing, NiceClockDB.waveClock, function(self)
+      NiceClockDB.waveClock = self:GetChecked()
       frame:ApplySettings()
     end)
 
     -- Reset Defaults Button
-    local rb = CreateFrame("Button","TimeResetButton",p,"UIPanelButtonTemplate")
+    local rb = CreateFrame("Button","NiceClockResetButton",p,"UIPanelButtonTemplate")
     rb:SetSize(120,22)
     rb:SetPoint("BOTTOM",p,"BOTTOM",0,10)
     rb:SetText("Default")
@@ -1701,59 +1712,59 @@ function frame:CreateSettingsFrame()
           k == "yearID" or
           k == "yearSeconds"
         ) then
-          TimeDB[k] = v
+          NiceClockDB[k] = v
         end
       end
       -- END MOD
 
-      TimeDB.positionPoint = nil; TimeDB.positionRelPoint = nil; TimeDB.positionX = nil; TimeDB.positionY = nil
+      NiceClockDB.positionPoint = nil; NiceClockDB.positionRelPoint = nil; NiceClockDB.positionX = nil; NiceClockDB.positionY = nil
       -- Restore minimap icon to default position
-      TimeDB.minimapAnchorPoint  = DEFAULTS.minimapAnchorPoint
-      TimeDB.minimapRelativePoint= DEFAULTS.minimapRelativePoint
-      TimeDB.minimapX            = DEFAULTS.minimapX
-      TimeDB.minimapY            = DEFAULTS.minimapY
+      NiceClockDB.minimapAnchorPoint  = DEFAULTS.minimapAnchorPoint
+      NiceClockDB.minimapRelativePoint= DEFAULTS.minimapRelativePoint
+      NiceClockDB.minimapX            = DEFAULTS.minimapX
+      NiceClockDB.minimapY            = DEFAULTS.minimapY
       if frame.minimapIcon then
         frame.minimapIcon:ClearAllPoints()
-        frame.minimapIcon:SetPoint(TimeDB.minimapAnchorPoint, Minimap,
-                                   TimeDB.minimapRelativePoint,
-                                   TimeDB.minimapX, TimeDB.minimapY)
+        frame.minimapIcon:SetPoint(NiceClockDB.minimapAnchorPoint, Minimap,
+                                   NiceClockDB.minimapRelativePoint,
+                                   NiceClockDB.minimapX, NiceClockDB.minimapY)
       end
 
-      fs:SetValue(TimeDB.fontSize)
-      sd:SetChecked(TimeDB.showDate)
-      h24:SetChecked(TimeDB.is24h)
-      ss:SetChecked(TimeDB.showSeconds)
-      ust:SetChecked(TimeDB.useServerTime)
-      chime:SetChecked(TimeDB.hourlyChime)
-      tz:SetValue(TimeDB.timezoneOffset or 0)
-      _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", TimeDB.timezoneOffset or 0))
-      if TimeDB.useServerTime then
+      fs:SetValue(NiceClockDB.fontSize)
+      sd:SetChecked(NiceClockDB.showDate)
+      h24:SetChecked(NiceClockDB.is24h)
+      ss:SetChecked(NiceClockDB.showSeconds)
+      ust:SetChecked(NiceClockDB.useServerTime)
+      chime:SetChecked(NiceClockDB.hourlyChime)
+      tz:SetValue(NiceClockDB.timezoneOffset or 0)
+      _G[tz:GetName() .. "Text"]:SetText("Time Zone Offset: " .. string.format("%+d", NiceClockDB.timezoneOffset or 0))
+      if NiceClockDB.useServerTime then
         tz:Disable()
         tz:SetAlpha(0.5)
       else
         tz:Enable()
         tz:SetAlpha(1)
       end
-      UIDropDownMenu_SetSelectedValue(fontDropdown, TimeDB.fontName)
-      UIDropDownMenu_SetText(fontDropdown, TimeDB.fontName)
-      mv:SetChecked(TimeDB.allowMove)
-      hc:SetChecked(TimeDB.hideClock)
-      hi:SetChecked(TimeDB.hideIcon)
-      rgb:SetChecked(TimeDB.rgbClock)
-      bc:SetChecked(TimeDB.waveClock)
+      UIDropDownMenu_SetSelectedValue(fontDropdown, NiceClockDB.fontName)
+      UIDropDownMenu_SetText(fontDropdown, NiceClockDB.fontName)
+      mv:SetChecked(NiceClockDB.allowMove)
+      hc:SetChecked(NiceClockDB.hideClock)
+      hi:SetChecked(NiceClockDB.hideIcon)
+      rgb:SetChecked(NiceClockDB.rgbClock)
+      bc:SetChecked(NiceClockDB.waveClock)
       local adSlider = _G[addonName.."AlarmDurSlider"]
       if adSlider then
-        adSlider:SetValue(TimeDB.alarmDuration or DEFAULTS.alarmDuration)
-        _G[adSlider:GetName() .. "Text"]:SetText("Alarm Duration: " .. (TimeDB.alarmDuration or DEFAULTS.alarmDuration) .. "s")
+        adSlider:SetValue(NiceClockDB.alarmDuration or DEFAULTS.alarmDuration)
+        _G[adSlider:GetName() .. "Text"]:SetText("Alarm Duration: " .. (NiceClockDB.alarmDuration or DEFAULTS.alarmDuration) .. "s")
       end
 
       frame:ApplySettings()
       frame:ApplyMoveSettings()
 
-      for k,v in pairs(PERCHAR_DEFAULTS) do TimePerCharDB[k] = v end
+      for k,v in pairs(PERCHAR_DEFAULTS) do NiceClockPerCharDB[k] = v end
       frame:ApplyQoLSettings()
 
-      TimePerCharDB.combatFont = nil
+      NiceClockPerCharDB.combatFont = nil
       _G["DAMAGE_TEXT_FONT"] = ORIGINAL_DAMAGE_TEXT_FONT
       _G["COMBAT_TEXT_FONT"] = ORIGINAL_COMBAT_TEXT_FONT
       frame:ApplyCombatSettings()
@@ -1864,7 +1875,7 @@ function frame:CreateSettingsFrame()
     durSlider:SetValueStep(5)
     durSlider:SetObeyStepOnDrag(true)
     durSlider:SetWidth(300)
-    durSlider:SetValue(TimeDB.alarmDuration or DEFAULTS.alarmDuration)
+    durSlider:SetValue(NiceClockDB.alarmDuration or DEFAULTS.alarmDuration)
     -- Position the slider's value text below the slider so it doesn't
     -- extend past the settings frame border.
     local durText = _G[durSlider:GetName() .. "Text"]
@@ -1877,12 +1888,12 @@ function frame:CreateSettingsFrame()
     end
     durSlider:SetScript("OnValueChanged", function(self, v)
       v = math.floor(v + 0.5)
-      TimeDB.alarmDuration = v
+      NiceClockDB.alarmDuration = v
       _G[self:GetName() .. "Text"]:SetText("Alarm Duration: " .. v .. "s")
     end)
     _G[durSlider:GetName() .. "Low"]:SetText("5")
     _G[durSlider:GetName() .. "High"]:SetText("60")
-    _G[durSlider:GetName() .. "Text"]:SetText("Alarm Duration: " .. (TimeDB.alarmDuration or DEFAULTS.alarmDuration) .. "s")
+    _G[durSlider:GetName() .. "Text"]:SetText("Alarm Duration: " .. (NiceClockDB.alarmDuration or DEFAULTS.alarmDuration) .. "s")
 
     local setBtn = CreateFrame("Button", addonName.."AlarmSetBtn", p, "UIPanelButtonTemplate")
     setBtn:SetSize(80, 22)
@@ -1914,7 +1925,7 @@ function frame:CreateSettingsFrame()
     clearBtn:SetPoint("LEFT", setBtn, "RIGHT", 10, 0)
     clearBtn:SetText("Clear All")
     clearBtn:SetScript("OnClick", function()
-      TimeDB.alarms = {}
+      NiceClockDB.alarms = {}
       frame:RefreshAlarmList()
       print(addonName..": all alarms cleared.")
     end)
@@ -1952,23 +1963,23 @@ function frame:CreateSettingsFrame()
   -- Quality of Life Panel
   do
     local p = panels[3]
-    local ht = CreateCheckbox(p, "TimeHideTrackerCB", "Hide Objective Tracker", LAYOUT.left, LAYOUT.top, TimePerCharDB.hideTracker, function(self)
-      TimePerCharDB.hideTracker = self:GetChecked()
+    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", LAYOUT.left, LAYOUT.top, NiceClockPerCharDB.hideTracker, function(self)
+      NiceClockPerCharDB.hideTracker = self:GetChecked()
       if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
     end)
 
-    local ts = CreateFrame("Slider","TimeTrackerSizeSlider",p,"OptionsSliderTemplate")
+    local ts = CreateFrame("Slider","NiceClockTrackerSizeSlider",p,"OptionsSliderTemplate")
     ts:SetPoint("TOPLEFT",ht,"BOTTOMLEFT",0,-40)
     ts:SetMinMaxValues(0.5,2); ts:SetValueStep(0.05); ts:SetWidth(300)
-    ts:SetValue(TimePerCharDB.trackerScale or 1)
+    ts:SetValue(NiceClockPerCharDB.trackerScale or 1)
     ts:SetScript("OnValueChanged",function(self,v)
-      TimePerCharDB.trackerScale = v
+      NiceClockPerCharDB.trackerScale = v
       _G[self:GetName().."Text"]:SetText("Objective Tracker Scale: "..string.format("%.2f", v))
       ObjectiveTrackerFrame:SetScale(v)
     end)
-    _G["TimeTrackerSizeSliderLow"]:SetText("0.5")
-    _G["TimeTrackerSizeSliderHigh"]:SetText("2")
-    _G["TimeTrackerSizeSliderText"]:SetText("Objective Tracker Scale: "..string.format("%.2f", (TimePerCharDB.trackerScale or 1)))
+    _G["NiceClockTrackerSizeSliderLow"]:SetText("0.5")
+    _G["NiceClockTrackerSizeSliderHigh"]:SetText("2")
+    _G["NiceClockTrackerSizeSliderText"]:SetText("Objective Tracker Scale: "..string.format("%.2f", (NiceClockPerCharDB.trackerScale or 1)))
   end
 
   -- Track Panel
@@ -2041,9 +2052,9 @@ function frame:CreateSettingsFrame()
         opt.label,
         0,
         yOff,
-        TimeDB[opt.key] or false,
+        NiceClockDB[opt.key] or false,
         function(self)
-          TimeDB[opt.key] = self:GetChecked()
+          NiceClockDB[opt.key] = self:GetChecked()
         end,
         nil,
         nil,
@@ -2083,9 +2094,9 @@ function frame:CreateSettingsFrame()
       "Show tracking info as tooltip on icon hover",
       0,
       -20,
-      TimeDB.trackTooltip or false,
+      NiceClockDB.trackTooltip or false,
       function(self)
-        TimeDB.trackTooltip = self:GetChecked()
+        NiceClockDB.trackTooltip = self:GetChecked()
       end,
       nil,
       nil,
@@ -2101,14 +2112,14 @@ function frame:CreateSettingsFrame()
     resetBtn:SetPoint("TOPLEFT", tooltipCB, "BOTTOMLEFT", 0, -20)
     resetBtn:SetText("Reset Data")
     resetBtn:SetScript("OnClick", function()
-      TimeDB.daySeconds   = 0
-      TimeDB.weekSeconds  = 0
-      TimeDB.monthSeconds = 0
-      TimeDB.yearSeconds  = 0
-      TimeDB.dayDate  = date("%Y-%m-%d")
-      TimeDB.weekID   = date("%Y-%U")
-      TimeDB.monthID  = date("%Y-%m")
-      TimeDB.yearID   = date("%Y")
+      NiceClockDB.daySeconds   = 0
+      NiceClockDB.weekSeconds  = 0
+      NiceClockDB.monthSeconds = 0
+      NiceClockDB.yearSeconds  = 0
+      NiceClockDB.dayDate  = date("%Y-%m-%d")
+      NiceClockDB.weekID   = date("%Y-%U")
+      NiceClockDB.monthID  = date("%Y-%m")
+      NiceClockDB.yearID   = date("%Y")
       frame.sessionStart = time()
       frame:UpdateTracking()
       print(addonName..": Tracking data reset.")
@@ -2175,7 +2186,7 @@ function frame:CreateSettingsFrame()
             info.func = function()
               -- clear other dropdown texts
               for g,d in pairs(dropdowns) do UIDropDownMenu_SetText(d, "Select Font") end
-              TimePerCharDB.combatFont = relative
+              NiceClockPerCharDB.combatFont = relative
               UIDropDownMenu_SetText(dd, dispCopy)
               SetCombatPreviewFont(fontObj, pathCopy)
               -- BEGIN FIX: force preview to redraw when font stays the same
@@ -2186,7 +2197,7 @@ function frame:CreateSettingsFrame()
               preview:SetText(txt)
               -- END FIX
             end
-            info.checked = (TimePerCharDB.combatFont == fontData.relative)
+            info.checked = (NiceClockPerCharDB.combatFont == fontData.relative)
             UIDropDownMenu_AddButton(info)
           end
         end
@@ -2274,8 +2285,8 @@ function frame:CreateSettingsFrame()
 
     -- Set initial dropdown text and preview based on saved font
     for _,dd in pairs(dropdowns) do UIDropDownMenu_SetText(dd, "Select Font") end
-    if TimePerCharDB.combatFont then
-      local g,f = TimePerCharDB.combatFont:match("^([^/]+)/(.+)$")
+    if NiceClockPerCharDB.combatFont then
+      local g,f = NiceClockPerCharDB.combatFont:match("^([^/]+)/(.+)$")
       if g and f and dropdowns[g] and combatFontExists[g][f] then
         UIDropDownMenu_SetText(dropdowns[g], f:gsub("%.otf$",""):gsub("%.ttf$","") )
         local fd = combatFontCache[g][f]
@@ -2299,7 +2310,7 @@ function frame:CreateSettingsFrame()
     applyBtn:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", 0, -8)
     applyBtn:SetText("Apply")
     applyBtn:SetScript("OnClick", function()
-      if TimePerCharDB.combatFont then
+      if NiceClockPerCharDB.combatFont then
         print(addonName..": Combat text font saved. Requires full game restart once applied.")
         UIErrorsFrame:AddMessage(addonName..": please EXIT & RESTART WoW to apply.",1,1,0)
       else
@@ -2357,8 +2368,8 @@ function frame:CreateSettingsFrame()
       local x = col * 160
       -- tighter vertical spacing keeps checkboxes inside the panel
       local y = -30 * (row + 1)
-      CreateCheckbox(p, "TimeCombat"..opt.k.."CB", opt.l, x, y, TimePerCharDB[opt.k], function(self)
-        TimePerCharDB[opt.k] = self:GetChecked()
+      CreateCheckbox(p, "NiceClockCombat"..opt.k.."CB", opt.l, x, y, NiceClockPerCharDB[opt.k], function(self)
+        NiceClockPerCharDB[opt.k] = self:GetChecked()
         SetCVar(opt.c, self:GetChecked() and 1 or 0)
       end, nil, nil, sizeSlider, "BOTTOMLEFT")
     end
@@ -2370,8 +2381,8 @@ function frame:CreateSettingsFrame()
 end
 
 -- ─── Slash Command ───────────────────────────────────────────────────────────
-SLASH_TIME1 = "/time"
-SlashCmdList["TIME"] = function(msg)
+SLASH_NICECLOCK1 = "/niceclock"
+SlashCmdList["NICECLOCK"] = function(msg)
   local cmd = msg and strtrim(msg) or ""
   if cmd == "" then
     frame:ToggleSettings()
@@ -2465,7 +2476,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
       self.fs:SetJustifyH("LEFT"); self.fs:SetJustifyV("BOTTOM")
       -- Create icon texture
       self.icon = frame:CreateTexture(addonName.."Icon","ARTWORK")
-      self.icon:SetTexture("Interface\\AddOns\\Time\\Timeicon.tga")
+      self.icon:SetTexture("Interface\\AddOns\\NiceClock\\NiceClockicon.tga")
 
       -- ─── NEW: Icon Button for tracking tooltip on hover ──────────────────
       self.iconButton = CreateFrame("Button", addonName.."IconButton", frame)
@@ -2503,27 +2514,27 @@ frame:SetScript("OnEvent", function(self, event, ...)
     self.sessionStart = now
 
     local today = date("%Y-%m-%d")
-    if TimeDB.dayDate ~= today then
-      TimeDB.dayDate    = today
-      TimeDB.daySeconds = 0
+    if NiceClockDB.dayDate ~= today then
+      NiceClockDB.dayDate    = today
+      NiceClockDB.daySeconds = 0
     end
 
     local weekID = date("%Y-%U")
-    if TimeDB.weekID ~= weekID then
-      TimeDB.weekID      = weekID
-      TimeDB.weekSeconds = 0
+    if NiceClockDB.weekID ~= weekID then
+      NiceClockDB.weekID      = weekID
+      NiceClockDB.weekSeconds = 0
     end
 
     local monthID = date("%Y-%m")
-    if TimeDB.monthID ~= monthID then
-      TimeDB.monthID      = monthID
-      TimeDB.monthSeconds = 0
+    if NiceClockDB.monthID ~= monthID then
+      NiceClockDB.monthID      = monthID
+      NiceClockDB.monthSeconds = 0
     end
 
     local yearID = date("%Y")
-    if TimeDB.yearID ~= yearID then
-      TimeDB.yearID      = yearID
-      TimeDB.yearSeconds = 0
+    if NiceClockDB.yearID ~= yearID then
+      NiceClockDB.yearID      = yearID
+      NiceClockDB.yearSeconds = 0
     end
 
     if self.trackTicker then self.trackTicker:Cancel() end
@@ -2554,10 +2565,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
     -- BEGIN TRACKING ENHANCEMENT: save session to accumulators
     local now = time()
     local elapsed = now - (self.sessionStart or now)
-    TimeDB.daySeconds   = (TimeDB.daySeconds   or 0) + elapsed
-    TimeDB.weekSeconds  = (TimeDB.weekSeconds  or 0) + elapsed
-    TimeDB.monthSeconds = (TimeDB.monthSeconds or 0) + elapsed
-    TimeDB.yearSeconds  = (TimeDB.yearSeconds  or 0) + elapsed
+    NiceClockDB.daySeconds   = (NiceClockDB.daySeconds   or 0) + elapsed
+    NiceClockDB.weekSeconds  = (NiceClockDB.weekSeconds  or 0) + elapsed
+    NiceClockDB.monthSeconds = (NiceClockDB.monthSeconds or 0) + elapsed
+    NiceClockDB.yearSeconds  = (NiceClockDB.yearSeconds  or 0) + elapsed
     if self.trackTicker then self.trackTicker:Cancel(); self.trackTicker = nil end
     if self.alarmChecker then self.alarmChecker:Cancel(); self.alarmChecker = nil end
     self:StopRGBTicker()
@@ -2569,10 +2580,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
       local key = self:GetPlayerKey()
       local cur = self:GetCurrentCharacterPlayedSeconds()
       if key and key ~= "" and cur then
-        if type(TimeDB.playedByCharacter) ~= "table" then
-          TimeDB.playedByCharacter = {}
+        if type(NiceClockDB.playedByCharacter) ~= "table" then
+          NiceClockDB.playedByCharacter = {}
         end
-        TimeDB.playedByCharacter[key] = cur
+        NiceClockDB.playedByCharacter[key] = cur
       end
     end
 
@@ -2610,30 +2621,30 @@ function frame:UpdateTracking()
   if self.sessionValText then
     local txt = self:FormatSeconds(sessionElapsed)
     self.sessionValText:SetText(txt)
-    self.sessionValText:SetShown(TimeDB.trackSession)
+    self.sessionValText:SetShown(NiceClockDB.trackSession)
   end
 
   if self.dayValText then
-    local dayTotal = (TimeDB.daySeconds or 0) + sessionElapsed
+    local dayTotal = (NiceClockDB.daySeconds or 0) + sessionElapsed
     self.dayValText:SetText(self:FormatSeconds(dayTotal))
-    self.dayValText:SetShown(TimeDB.trackDay)
+    self.dayValText:SetShown(NiceClockDB.trackDay)
   end
 
   if self.weekValText then
-    local weekTotal = (TimeDB.weekSeconds or 0) + sessionElapsed
+    local weekTotal = (NiceClockDB.weekSeconds or 0) + sessionElapsed
     self.weekValText:SetText(self:FormatSeconds(weekTotal))
-    self.weekValText:SetShown(TimeDB.trackWeek)
+    self.weekValText:SetShown(NiceClockDB.trackWeek)
   end
 
   if self.monthValText then
-    local monthTotal = (TimeDB.monthSeconds or 0) + sessionElapsed
+    local monthTotal = (NiceClockDB.monthSeconds or 0) + sessionElapsed
     self.monthValText:SetText(self:FormatSeconds(monthTotal))
-    self.monthValText:SetShown(TimeDB.trackMonth)
+    self.monthValText:SetShown(NiceClockDB.trackMonth)
   end
 
   if self.yearValText then
-    local yearTotal = (TimeDB.yearSeconds or 0) + sessionElapsed
+    local yearTotal = (NiceClockDB.yearSeconds or 0) + sessionElapsed
     self.yearValText:SetText(self:FormatSeconds(yearTotal))
-    self.yearValText:SetShown(TimeDB.trackYear)
+    self.yearValText:SetShown(NiceClockDB.trackYear)
   end
 end
