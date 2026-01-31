@@ -254,6 +254,9 @@ end
 local PERCHAR_DEFAULTS = {
   hideTracker    = false,
   trackerScale   = 1,
+  enable3dPortraits = false,
+  autoSellJunk   = false,
+  fastAutoLoot   = false,
   combatHealing  = tonumber(GetCVar("floatingCombatTextCombatHealing")) == 1,
   combatDamage   = tonumber(GetCVar("floatingCombatTextCombatDamage")) == 1,
   petDamage      = tonumber(GetCVar("floatingCombatTextPetMeleeDamage")) == 1,
@@ -591,6 +594,91 @@ local function CreateCheckbox(parent, name, label, x, y, checked, onClick, onEnt
   if onEnter then cb:SetScript("OnEnter", onEnter) end
   if onLeave then cb:SetScript("OnLeave", onLeave) end
   return cb
+end
+
+-- ─── Quality of Life Modules ────────────────────────────────────────────────
+local portraitManager = {
+  enabled = false,
+  portraits = {},
+  forbidden = {
+    ["AchievementFrameComparisonHeaderPortrait"] = true,
+  },
+  minSize = 30,
+}
+
+function portraitManager:CreateModel(texture, unit)
+  local parent = texture:GetParent()
+  local model = CreateFrame("PlayerModel", nil, parent)
+  model:SetAllPoints(texture)
+  model:SetFrameLevel((parent and parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 1)
+  if model.SetModelDrawLayer and texture.GetDrawLayer then
+    model:SetModelDrawLayer(texture:GetDrawLayer() or "ARTWORK")
+  end
+  model:Hide()
+
+  local data = {
+    model = model,
+    unit = unit,
+  }
+  self.portraits[texture] = data
+
+  if parent and parent.HookScript then
+    parent:HookScript("OnShow", function()
+      if portraitManager.enabled then
+        portraitManager:UpdateTexture(texture, unit, true)
+      end
+    end)
+  end
+
+  return data
+end
+
+function portraitManager:IsAllowed(texture, unit)
+  if not self.enabled then return false end
+  if not texture or not unit or not UnitExists(unit) then return false end
+  if texture.noNiceClockPortrait then return false end
+  local name = texture:GetName()
+  if name and self.forbidden[name] then return false end
+  local w = texture:GetWidth() or 0
+  local h = texture:GetHeight() or 0
+  if w < self.minSize or h < self.minSize then return false end
+  return true
+end
+
+function portraitManager:UpdateTexture(texture, unit, force)
+  if not texture or not unit then return end
+  local data = self.portraits[texture]
+  if not data then
+    data = self:CreateModel(texture, unit)
+  end
+  data.unit = unit
+
+  if self:IsAllowed(texture, unit) then
+    data.model:SetUnit(unit)
+    data.model:SetPortraitZoom(1)
+    if data.model.SetCamDistanceScale then
+      data.model:SetCamDistanceScale(1)
+    end
+    if data.model.SetRotation then
+      data.model:SetRotation(0)
+    end
+    data.model:Show()
+    texture:Hide()
+  else
+    if data.model then data.model:Hide() end
+    texture:Show()
+  end
+end
+
+function portraitManager:RefreshAll()
+  for texture, data in pairs(self.portraits) do
+    self:UpdateTexture(texture, data.unit, true)
+  end
+end
+
+function portraitManager:SetEnabled(enabled)
+  self.enabled = enabled and true or false
+  self:RefreshAll()
 end
 
 -- ─── Clock Core ───────────────────────────────────────────────────────────────
@@ -976,7 +1064,7 @@ function frame:CreateMinimapIcon()
       frame:ShowTrackingTooltip(self)
     else
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      GameTooltip:AddLine("Settings")
+      GameTooltip:AddLine("NiceClock")
       GameTooltip:Show()
     end
   end)
@@ -1031,13 +1119,89 @@ end
 
 -- ─── QoL Settings ───────────────────────────────────────────────────────────
 function frame:ApplyQoLSettings()
-  if not ObjectiveTrackerFrame then return end
-  if NiceClockPerCharDB.hideTracker then
-    ObjectiveTrackerFrame:Hide()
-  else
-    ObjectiveTrackerFrame:Show()
+  if ObjectiveTrackerFrame then
+    if NiceClockPerCharDB.hideTracker then
+      ObjectiveTrackerFrame:Hide()
+    else
+      ObjectiveTrackerFrame:Show()
+    end
+    ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
   end
-  ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
+  portraitManager:SetEnabled(NiceClockPerCharDB.enable3dPortraits)
+end
+
+function frame:SellJunkItems()
+  local total = 0
+  local maxBag = NUM_BAG_SLOTS or 4
+  for bag = BACKPACK_CONTAINER, maxBag do
+    local slots = C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bag) or GetContainerNumSlots(bag)
+    for slot = 1, (slots or 0) do
+      local info = C_Container and C_Container.GetContainerItemInfo and C_Container.GetContainerItemInfo(bag, slot) or nil
+      local quality = info and info.quality or select(4, GetContainerItemInfo(bag, slot))
+      local locked = info and info.isLocked or select(3, GetContainerItemInfo(bag, slot))
+      local hasNoValue = info and info.hasNoValue
+
+      if quality == 0 and not locked and not hasNoValue then
+        local link = (info and info.hyperlink) or GetContainerItemLink(bag, slot)
+        local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(link or "")
+        if sellPrice and sellPrice > 0 then
+          local stackCount = info and info.stackCount or select(2, GetContainerItemInfo(bag, slot)) or 1
+          UseContainerItem(bag, slot)
+          total = total + (sellPrice * stackCount)
+        end
+      end
+    end
+  end
+
+  if total > 0 then
+    print(addonName .. ": Sold junk for " .. GetCoinTextureString(total))
+  end
+end
+
+function frame:FastLoot(autoLoot)
+  if self.fastLooting then return end
+  local shouldAutoLoot = autoLoot
+  if shouldAutoLoot == nil then
+    shouldAutoLoot = GetCVarBool("autoLootDefault") ~= IsModifiedClick("AUTOLOOTTOGGLE")
+  end
+  if not shouldAutoLoot then return end
+
+  local num = GetNumLootItems()
+  if not num or num == 0 then return end
+
+  self.fastLooting = true
+  C_Timer.After(0, function()
+    local count = GetNumLootItems()
+    for slot = count, 1, -1 do
+      LootSlot(slot)
+    end
+    self.fastLooting = false
+  end)
+end
+
+function frame:MERCHANT_SHOW()
+  if NiceClockPerCharDB.autoSellJunk then
+    self:SellJunkItems()
+  end
+end
+
+function frame:LOOT_READY(event, autoLoot)
+  if NiceClockPerCharDB.fastAutoLoot then
+    self:FastLoot(autoLoot)
+  end
+end
+
+function frame:LOOT_CLOSED()
+  self.fastLooting = false
+end
+
+function frame:UNIT_MODEL_CHANGED(event, unit)
+  if not portraitManager.enabled then return end
+  for texture, data in pairs(portraitManager.portraits) do
+    if data.unit == unit then
+      portraitManager:UpdateTexture(texture, unit, true)
+    end
+  end
 end
 
 -- ─── Combat Settings ─────────────────────────────────────────────────────────
@@ -1963,23 +2127,73 @@ function frame:CreateSettingsFrame()
   -- Quality of Life Panel
   do
     local p = panels[3]
-    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", LAYOUT.left, LAYOUT.top, NiceClockPerCharDB.hideTracker, function(self)
-      NiceClockPerCharDB.hideTracker = self:GetChecked()
-      if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
-    end)
-
+    local sliderWidth = 320
     local ts = CreateFrame("Slider","NiceClockTrackerSizeSlider",p,"OptionsSliderTemplate")
-    ts:SetPoint("TOPLEFT",ht,"BOTTOMLEFT",0,-40)
-    ts:SetMinMaxValues(0.5,2); ts:SetValueStep(0.05); ts:SetWidth(300)
+    ts:SetPoint("TOP", p, "TOP", 0, LAYOUT.top + 40)
+    ts:SetMinMaxValues(0.5,2); ts:SetValueStep(0.05); ts:SetWidth(sliderWidth)
     ts:SetValue(NiceClockPerCharDB.trackerScale or 1)
     ts:SetScript("OnValueChanged",function(self,v)
       NiceClockPerCharDB.trackerScale = v
       _G[self:GetName().."Text"]:SetText("Objective Tracker Scale: "..string.format("%.2f", v))
-      ObjectiveTrackerFrame:SetScale(v)
+      if ObjectiveTrackerFrame then
+        ObjectiveTrackerFrame:SetScale(v)
+      end
     end)
     _G["NiceClockTrackerSizeSliderLow"]:SetText("0.5")
     _G["NiceClockTrackerSizeSliderHigh"]:SetText("2")
     _G["NiceClockTrackerSizeSliderText"]:SetText("Objective Tracker Scale: "..string.format("%.2f", (NiceClockPerCharDB.trackerScale or 1)))
+
+    local hideOffsetX = -(sliderWidth / 2) + LAYOUT.left
+    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", hideOffsetX, -30, NiceClockPerCharDB.hideTracker, function(self)
+      NiceClockPerCharDB.hideTracker = self:GetChecked()
+      if ObjectiveTrackerFrame then
+        if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
+      end
+    end, nil, nil, ts, "BOTTOMLEFT", "TOPLEFT")
+
+    local qolOptions = {
+      {
+        key = "enable3dPortraits",
+        label = "3D portraits",
+        handler = function(checked)
+          NiceClockPerCharDB.enable3dPortraits = checked
+          portraitManager:SetEnabled(checked)
+        end,
+      },
+      {
+        key = "autoSellJunk",
+        label = "Auto-sell junk",
+        handler = function(checked)
+          NiceClockPerCharDB.autoSellJunk = checked
+        end,
+      },
+      {
+        key = "fastAutoLoot",
+        label = "Fast autoloot",
+        handler = function(checked)
+          NiceClockPerCharDB.fastAutoLoot = checked
+        end,
+      },
+    }
+
+    local prev = ht
+    local spacing = -30
+    for _, opt in ipairs(qolOptions) do
+      prev = CreateCheckbox(
+        p,
+        addonName .. "QoL" .. opt.key .. "CB",
+        opt.label,
+        0,
+        spacing,
+        NiceClockPerCharDB[opt.key],
+        function(self) opt.handler(self:GetChecked()) end,
+        nil,
+        nil,
+        prev,
+        "BOTTOMLEFT",
+        "TOPLEFT"
+      )
+    end
   end
 
   -- Track Panel
@@ -2467,6 +2681,10 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_LOGOUT")
 frame:RegisterEvent("CALENDAR_EVENT_ALARM")
 frame:RegisterEvent("TIME_PLAYED_MSG")
+frame:RegisterEvent("MERCHANT_SHOW")
+frame:RegisterEvent("LOOT_READY")
+frame:RegisterEvent("LOOT_CLOSED")
+frame:RegisterEvent("UNIT_MODEL_CHANGED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
   if event == "PLAYER_LOGIN" then
@@ -2506,6 +2724,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
     self:ApplyQoLSettings()
     self:ApplyCombatSettings()
     self:ApplyMoveSettings()
+    if not self.portraitHooked then
+      hooksecurefunc("SetPortraitTexture", function(texture, unit)
+        portraitManager:UpdateTexture(texture, unit)
+      end)
+      self.portraitHooked = true
+    end
     -- BEGIN FIX: Ensure the clock is draggable on first login (no settings changes required)
     self:EnsureClockHitbox()
     -- END FIX
