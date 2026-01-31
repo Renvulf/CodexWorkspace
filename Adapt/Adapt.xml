@@ -1,0 +1,416 @@
+<Ui>
+	<!-- Template so our created models can useParentLevel -->
+	<PlayerModel name="AdaptModelLevelTemplate" useParentLevel="true" virtual="true"/>
+
+	<!-- default's radio button is too low-res, creating our own -->
+	<CheckButton name="AdaptRadioButtonTemplate" virtual="true">
+		<Size x="22" y="22"/>
+		<Layers>
+			<Layer level="BACKGROUND">
+				<Texture file="Interface\Common\Indicator-Gray">
+					<Color r="0" g="0" b="0"/>
+				</Texture>
+			</Layer>
+		</Layers>
+		<NormalTexture file="Interface\Garrison\GarrLanding-TradeskilLTimerFill">
+			<Size x="16" y="16"/>
+			<Anchors>
+				<Anchor point="CENTER"/>
+			</Anchors>
+			<Color r="0.65" g="0.65" b="0.65"/>
+		</NormalTexture>
+		<HighlightTexture file="Interface\Buttons\UI-RadioButton" alphaMode="ADD">
+			<TexCoords left="0.5" right="0.75" top="0" bottom="1"/>
+		</HighlightTexture>
+		<CheckedTexture file="Interface\Common\Indicator-Yellow">
+			<Size x="16" y="16"/>
+			<Anchors>
+				<Anchor point="CENTER" x="0" y="-1"/>
+			</Anchors>
+		</CheckedTexture>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString parentKey="Text" inherits="GameFontHighlight">
+					<Anchors>
+						<Anchor point="LEFT" relativePoint="RIGHT"/>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Scripts>
+			<OnLoad>
+				self:GetNormalTexture():SetDesaturated(true)
+				if self.text then
+					self.Text:SetText(self.text)
+					self:SetHitRectInsets(0,-self.Text:GetStringWidth()-6,0,0)
+					self.text = nil
+				end
+			</OnLoad>
+			<OnClick>
+				Adapt.OptionsRadioOnClick(self)
+			</OnClick>
+			<OnEnter>
+				Adapt.OptionsOnEnter(self)
+			</OnEnter>
+			<OnLeave>
+				GameTooltip:Hide()
+			</OnLeave>
+		</Scripts>
+	</CheckButton>
+
+	<CheckButton name="AdaptCheckButtonTemplate" virtual="true">
+		<Size x="24" y="24"/>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString parentKey="Text" inherits="GameFontHighlight">
+					<Anchors>
+						<Anchor point="LEFT" relativePoint="RIGHT"/>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<NormalTexture file="Interface\Buttons\UI-CheckBox-Up"/>
+		<PushedTexture file="Interface\Buttons\UI-CheckBox-Down"/>
+		<HighlightTexture file="Interface\Buttons\UI-CheckBox-Highlight" alphaMode="ADD"/>
+		<CheckedTexture file="Interface\Buttons\UI-CheckBox-Check"/>
+		<DisabledCheckedTexture file="Interface\Buttons\UI-CheckBox-Check-Disabled"/>
+		<Scripts>
+			<OnLoad>
+				if self.text then
+					self.Text:SetText(self.text)
+					self:SetHitRectInsets(0,-self.Text:GetStringWidth()-6,0,0)
+					self.text = nil
+				end
+			</OnLoad>
+			<OnClick>
+				Adapt.OptionsCheckOnClick(self)
+			</OnClick>
+			<OnEnter>
+				Adapt.OptionsOnEnter(self)
+			</OnEnter>
+			<OnLeave>
+				GameTooltip:Hide()
+			</OnLeave>
+		</Scripts>
+	</CheckButton>
+
+	<!-- This is a variation of the checkbutton with a red X for the CheckedTexture;
+			 it also has a fixed width intended to be used for the scrollframe -->
+	<CheckButton name="AdaptXCheckButtonTemplate" virtual="true">
+		<Size x="24" y="24"/>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString parentKey="Text" inherits="GameFontHighlight">
+					<Anchors>
+						<Anchor point="LEFT" relativePoint="RIGHT"/>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<NormalTexture file="Interface\Buttons\UI-CheckBox-Up"/>
+		<PushedTexture file="Interface\Buttons\UI-CheckBox-Down"/>
+		<HighlightTexture file="Interface\Buttons\UI-CheckBox-Highlight" alphaMode="ADD"/>
+		<CheckedTexture file="Interface\RaidFrame\ReadyCheck-NotReady"/>
+		<HitRectInsets>
+			<AbsInset left="0" right="-250" top="0" bottom="0"/>
+		</HitRectInsets>
+		<Scripts>
+			<OnLoad>
+				if self.text then
+					self.Text:SetText(self.text)
+					self:SetHitRectInsets(0,-self.Text:GetStringWidth()-6,0,0)
+					self.text = nil
+				end
+			</OnLoad>
+			<OnClick>
+				Adapt.OptionsCheckOnClick(self)
+			</OnClick>
+			<OnEnter>
+				Adapt.OptionsOnEnter(self)
+			</OnEnter>
+			<OnLeave>
+				GameTooltip:Hide()
+			</OnLeave>
+		</Scripts>
+	</CheckButton>
+
+	<Frame name="AdaptOptions" hidden="true">
+		<KeyValues>
+			<KeyValue key="name" value="Adapt"/>
+		</KeyValues>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString parentKey="Title" inherits="GameFontNormalLarge" text="Adapt">
+					<Anchors>
+						<Anchor point="TOPLEFT" x="16" y="-16"/>
+					</Anchors>
+				</FontString>
+				<FontString parentKey="Version" inherits="GameFontNormalSmall">
+					<Anchors>
+						<Anchor point="BOTTOMLEFT" relativeKey="$parent.Title" relativePoint="BOTTOMRIGHT" x="4" y="0"/>
+					</Anchors>
+				</FontString>
+				<FontString inherits="GameFontHighlightSmall" text="This addon animates the static portraits of (nearly) any UI.">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Title" relativePoint="BOTTOMLEFT" x="0" y="-8"/>
+					</Anchors>
+				</FontString>
+				<FontString parentKey="DisplayHeader" inherits="GameFontNormal" text="These options affect how portraits are displayed:">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Title" relativePoint="BOTTOMLEFT" x="0" y="-40"/>
+					</Anchors>
+				</FontString>
+				<FontString parentKey="BlacklistHeader" inherits="GameFontNormal" text="These options turn off the animation of some portraits:">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="0" y="-180"/>
+					</Anchors>
+				</FontString>
+				<FontString inherits="GameFontNormalSmall" text="Some addons do not name their portraits. Put an |TInterface\RaidFrame\ReadyCheck-NotReady:16|t here to not animate them:">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.BlacklistHeader" relativePoint="BOTTOMLEFT" x="16" y="-16"/>
+					</Anchors>
+				</FontString>
+				<FontString inherits="GameFontNormalSmall" text="To prevent a named portrait from animating, put an |TInterface\RaidFrame\ReadyCheck-NotReady:16|t beside its name:">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.BlacklistHeader" relativePoint="BOTTOMLEFT" x="16" y="-64"/>
+					</Anchors>
+				</FontString>
+				<Texture name="AdaptOptionsPortrait" parentKey="Portrait" file="Interface\Icons\INV_Misc_QuestionMark">
+					<Size x="112" y="112"/>
+					<Anchors>
+						<Anchor point="TOPRIGHT" x="-80" y="-80"/>
+					</Anchors>
+				</Texture>
+			</Layer>
+			<Layer level="OVERLAY">
+				<!-- this is the overlay to the portrait  -->
+				<Texture parentKey="PortraitBorder" file="Interface\AddOns\Adapt\SquareBorder">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Portrait" x="-8" y="8"/>
+						<Anchor point="BOTTOMRIGHT" relativeKey="$parent.Portrait" x="8" y="-8"/>
+					</Anchors>
+				</Texture>
+			</Layer>
+		</Layers>
+		<Frames>
+			<CheckButton parentArray="Shape" inherits="AdaptRadioButtonTemplate" id="1">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="16" y="-16"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Round Portrait"/>
+					<KeyValue key="radio" value="Shape"/>
+					<KeyValue key="tooltip" value="This fits models within round unit frame portraits, such as those used by the default UI."/>
+				</KeyValues>
+			</CheckButton>
+			<CheckButton parentKey="UseMask" inherits="AdaptCheckButtonTemplate">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="32" y="-40"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="With Overlay Mask"/>
+					<KeyValue key="variable" value="UseMask"/>
+					<KeyValue key="tooltip" value="Addons cannot apply a true mask to models. This adds a circular overly to soften the corners of the square model area."/>
+				</KeyValues>
+			</CheckButton>
+			<CheckButton parentKey="TrueInset" inherits="AdaptCheckButtonTemplate">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="32" y="-64"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Smaller Portrait"/>
+					<KeyValue key="variable" value="TrueInset"/>
+					<KeyValue key="tooltip" value="When this is unchecked, models are slightly oversized in round portraits, but it can cause corners to peek out behind unit frames. Check this to bring the corners in."/>
+				</KeyValues>
+			</CheckButton>
+			<CheckButton parentArray="Shape" inherits="AdaptRadioButtonTemplate" id="2">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="16" y="-88"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Square Portrait"/>
+					<KeyValue key="radio" value="Shape"/>
+					<KeyValue key="tooltip" value="Use this when your unit frames have square portraits."/>
+				</KeyValues>
+			</CheckButton>
+
+			<CheckButton parentKey="AllowIdle" inherits="AdaptCheckButtonTemplate">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="16" y="-128"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Normal Animation"/>
+					<KeyValue key="variable" value="AllowIdle"/>
+					<KeyValue key="tooltip" value="When this is unchecked, models are set to a 'stand' animation, which prevents idle animations such as looking around or sighing, which can be distracting. When checked, models are allowed their natural animation."/>
+				</KeyValues>
+			</CheckButton>
+
+			<CheckButton parentArray="Zoom" inherits="AdaptRadioButtonTemplate" id="1">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="220" y="-16"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Head Portrait"/>
+					<KeyValue key="radio" value="Zoom"/>
+					<KeyValue key="tooltip" value="Zooms the camera in to the unit's face and shoulders."/>
+				</KeyValues>
+			</CheckButton>
+			<CheckButton parentArray="Zoom" inherits="AdaptRadioButtonTemplate" id="2">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="220" y="-40"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Torso Portrait"/>
+					<KeyValue key="radio" value="Zoom"/>
+					<KeyValue key="tooltip" value="Zooms the camera out a bit to show more of the unit."/>
+				</KeyValues>
+			</CheckButton>
+			<CheckButton parentArray="Zoom" inherits="AdaptRadioButtonTemplate" id="3">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="220" y="-64"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Full Model"/>
+					<KeyValue key="radio" value="Zoom"/>
+					<KeyValue key="tooltip" value="Zooms the camera out more of the way to show most of a unit."/>
+				</KeyValues>
+			</CheckButton>
+
+			<CheckButton parentArray="Back" inherits="AdaptRadioButtonTemplate" id="1">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="180" y="-106"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Background Color"/>
+					<KeyValue key="radio" value="Back"/>
+					<KeyValue key="tooltip" value="Color the background with what's chosen in the color swatch to the right."/>
+				</KeyValues>
+				<Frames>
+					<Button parentKey="Swatch">
+						<Size x="22" y="22"/>
+						<Anchors>
+							<Anchor point="LEFT" relativeKey="$parent.Text" relativePoint="RIGHT" x="2" y="-1"/>
+						</Anchors>
+						<Layers>
+							<Layer level="BACKGROUND">
+								<Texture file="Interface\FriendsFrame\Battlenet-WoWicon"/>
+							</Layer>
+							<Layer level="ARTWORK">
+								<Texture parentKey="Color" file="Interface\ChatFrame\ChatFrameColorSwatch">
+									<Color r="1" g="0.82" b="0"/>
+								</Texture>
+							</Layer>
+						</Layers>
+						<HighlightTexture file="Interface\Buttons\UI-CheckBox-Highlight" alphaMode="ADD">
+							<Anchors>
+								<Anchor point="TOPLEFT" x="-4" y="4"/>
+								<Anchor point="BOTTOMRIGHT" x="4" y="-4"/>
+							</Anchors>
+						</HighlightTexture>
+						<Scripts>
+							<OnClick>
+								Adapt:OptionsColorSwatchOnClick()
+							</OnClick>
+						</Scripts>
+					</Button>
+				</Frames>
+			</CheckButton>
+			<CheckButton parentArray="Back" inherits="AdaptRadioButtonTemplate" id="2">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.DisplayHeader" relativePoint="BOTTOMLEFT" x="180" y="-130"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Color Background By Class"/>
+					<KeyValue key="radio" value="Back"/>
+					<KeyValue key="tooltip" value="Color the background by the class of the unit. Brown for warriors, blue for mages, etc."/>
+				</KeyValues>
+			</CheckButton>
+
+			<CheckButton parentKey="HideAnon" inherits="AdaptXCheckButtonTemplate">
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.BlacklistHeader" relativePoint="BOTTOMLEFT" x="32" y="-32"/>
+				</Anchors>
+				<KeyValues>
+					<KeyValue key="text" value="Anonymous Portraits"/>
+					<KeyValue key="variable" value="HideAnon"/>
+					<KeyValue key="tooltip" value="Anonymous portraits are typically addon-made portraits that don't have a name. Adapt can animate them but can't selectively choose to disable them. This option will affect all anonymous portraits."/>
+				</KeyValues>
+			</CheckButton>
+
+			<Frame parentKey="Blacklist">
+				<Size x="320" y="182"/>
+				<Anchors>
+					<Anchor point="TOPLEFT" relativeKey="$parent.BlacklistHeader" relativePoint="BOTTOMLEFT" x="28" y="-84"/>
+				</Anchors>
+				<!-- <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
+					<TileSize val="16"/>
+					<EdgeSize val="16"/>
+					<BackgroundInsets>
+						<AbsInset left="3" right="3" top="3" bottom="3"/>
+					</BackgroundInsets>
+					<Color r="0" g="0" b="0"/>
+					<BorderColor r="0.5" g="0.5" b="0.5"/>
+				</Backdrop> -->
+				<Frames>
+					<ScrollFrame parentKey="ScrollFrame" name="AdaptBlacklistScrollFrame" inherits="FauxScrollFrameTemplateLight">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="5" y="-8"/>
+							<Anchor point="BOTTOMRIGHT" x="-31" y="6"/>
+						</Anchors>
+						<Scripts>
+							<OnVerticalScroll>
+								FauxScrollFrame_OnVerticalScroll(self, offset, 24, Adapt.OptionsBlacklistScrollFrameUpdate)
+							</OnVerticalScroll>
+						</Scripts>
+					</ScrollFrame>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="1">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-8"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="2">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-32"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="3">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-56"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="4">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-80"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="5">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-104"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="6">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-128"/>
+						</Anchors>
+					</CheckButton>
+					<CheckButton parentArray="Buttons" inherits="AdaptXCheckButtonTemplate" id="7">
+						<Anchors>
+							<Anchor point="TOPLEFT" x="6" y="-152"/>
+						</Anchors>
+					</CheckButton>
+				</Frames>
+			</Frame>
+
+		</Frames>
+		<Scripts>
+			<OnLoad>
+				self.Version:SetText(format("version %s",C_AddOns.GetAddOnMetadata("Adapt","Version")))
+				if Settings and Settings.RegisterCanvasLayoutCategory then
+					Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(self, "Adapt"))
+				else
+					InterfaceOptions_AddCategory(self)
+				end
+			</OnLoad>
+		</Scripts>
+	</Frame>
+</Ui>

@@ -1,0 +1,24 @@
+## Interface: 120000
+## Title: Adapt
+## Notes: This addon animates the static portraits of (nearly) any UI.
+## Author: Gello
+## Version: 2.6.0
+## X-WoWI-ID: 4729
+## X-Wago-ID: baND49No
+## X-Curse-Project-ID: 2341
+## SavedVariables: AdaptSettings
+## IconTexture: Interface\CharacterFrame\TemporaryPortrait-Male-Gnome
+## Category-enUS: Unit Frames
+## Category-deDE: Einheitenfenster
+## Category-esES: Marcos de unidades
+## Category-esMX: Marcos de unidades
+## Category-frFR: Portraits d'unités
+## Category-itIT: Riquadri delle unità
+## Category-koKR: 개체창
+## Category-ptBR: Quadros de unidade
+## Category-ruRU: Рамки портретов
+## Category-zhCN: 单位框体
+## Category-zhTW: 單位框架
+Adapt.xml
+Adapt.lua
+Options.lua

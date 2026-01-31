@@ -1,0 +1,12 @@
+## Interface: 50503
+## Title: Adapt
+## Notes: This addon animates the static portraits of (nearly) any UI.
+## Author: Gello
+## Version: 2.6.0
+## X-WoWI-ID: 4729
+## X-Wago-ID: baND49No
+## X-Curse-Project-ID: 2341
+## SavedVariables: AdaptSettings
+Adapt.xml
+Adapt.lua
+Options.lua

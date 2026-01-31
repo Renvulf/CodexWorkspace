@@ -1,0 +1,185 @@
+01/24/2026 version 2.6.0
+- Fix for Lua error whent targeting hostiles in Midnight clients
+- toc update for 12.0.0 Midnight clients, 1.15.8 Classic clients, 5.5.3 MoP clients
+
+06/19/2025 version 2.5.6
+- toc update for 11.1.7 patch
+
+04/23/2025 version 2.5.5
+- toc update for 11.1.5, 1.15.7 patches
+
+03/02/2025 version 2.5.4
+- toc update for 11.1, 1.15.6 and 4.4.2 patches
+- Added to Unit Frames category on 11.1 clients
+
+10/22/2024 version 2.5.3
+- toc update for 11.0.5 and 1.15.4 patch
+
+08/13/2024 version 2.5.2
+- toc update for 11.0.2 patch
+
+07/23/2024 version 2.5.1
+- toc update for 11.0.0 and 1.15.3 patch
+
+07/03/2024 version 2.5.0
+- Updated to work on The War Within beta/PTR clients (when 'Load out of date AddOns' is enabled)
+
+05/07/2024 version 2.4.17
+- toc update for 10.2.7 patch
+
+04/30/2024 version 2.4.14
+- toc update for 1.15.2 and 4.4 patch
+
+03/19/2024 version 2.4.13
+- toc update for 10.2.6 patch
+
+03/10/2024 version 2.4.12
+- toc update for 1.15.1 patch
+
+01/16/2024 version 2.4.11
+- toc update for 10.2.5 patch
+
+11/07/2023 version 2.4.10
+- toc update for 10.2 patch
+- toc update for 3.4.3 patch
+
+09/05/2023 version 2.4.9
+- toc update for 10.1.7 patch
+
+08/24/2023 version 2.4.8
+- toc update for 1.14.4 amd 3.4.2 patches
+
+07/11/2023 version 2.4.7
+- toc update for 10.1.5 patch
+
+05/03/2023 version 2.4.6
+- toc update for icon and 10.1.0 patch
+
+03/21/2023 version 2.4.5
+- toc update for 10.0.7 patch
+
+01/25/2023 version 2.4.4
+- toc update for 10.0.5 patch
+
+01/19/2023 version 2.4.3
+- toc update for 3.4.1 patch
+
+11/15/2022 version 2.4.2
+- toc update for 10.0.2 patch
+
+10/25/2022 version 2.4.1
+- Update for Dragonflight clients
+
+10/04/2022 version 2.4.0
+- Update to support Dragonflight clients
+- Beta/PTR users will need to load out of date addons for this to work until the update for the Dragonflight pre-patch
+
+09/01/2022 version 2.3.9
+- toc update for WotLK Classic
+
+08/16/2022 version 2.3.8
+- toc update for 9.2.7 patch
+
+05/31/2022 version 2.3.7
+- toc update for 9.2.5 patch
+
+05/22/2022 version 2.3.6
+- Added wago and curse project IDs to toc
+
+05/12/2022 version 2.3.5
+- Fix to make wowup recognize the wowinterface provider. (May require a rescan of folders in wowup)
+
+04/03/2022 version 2.3.4
+- Models are shifted down to a lower draw layer: overlay to artwork, border/artwork to background. (Please let me know if things are overlapping portraits that shouldn't - I can add an option to have an alternate layering scheme.)
+
+03/27/2022 version 2.3.3
+- Moved model drawlayer to match the texture it replaces - and moved background and mask layers to sublevels behind and in front of this layer
+- toc update for Classic and BCC clients
+
+02/22/2022 version 2.3.2
+- toc update for 9.2 patch
+
+11/02/2021 version 2.3.1
+- toc update for 9.1.5 patch
+
+10/09/2021 version 2.3.0
+- Added option 'Normal Animation' so models can use their natural animation rather than being forced to a "stand" animation without idle behaviors that can be distracting. Turning this option on will stop Vulpera models from freezing when they're about to do their idle animations.
+- Third-party addons can now prevent Adapt from turning their textures into models by adding a "noAdapt" property/keyvalue to the texture (texture.noAdapt=true).
+- toc update for BCC and Classic Era
+
+06/29/2021 version 2.2.12
+- toc update for 9.1.0 patch
+
+05/18/2021 version 2.2.11
+- Update for The Burning Crusade Classic
+
+03/13/2021 version 2.2.10
+- toc update for 9.0.5 patch
+
+10/13/2018 version 2.2.9
+- toc update for 9.0 patch
+
+09/28/2020 version 2.2.8
+- toc update for 8.3 patch
+
+12/24/2018 version 2.2.7
+- toc update for 8.1 patch
+
+07/17/2018 version 2.2.6
+- toc update for 8.0 patch
+
+08/29/2017 version 2.2.5
+- toc update for 7.3 patch
+
+03/28/2016 version 2.2.4
+- toc update for 7.2 patch
+
+10/24/2016 version 2.2.3
+- toc update for 7.1 patch
+
+07/03/2016 version 2.2.2
+- Also workaround for UNIT_MODEL_CHANGED not firing when a player unghosts, causing their model to remain in ghostly form.
+
+07/03/2016 version 2.2.1
+- Workaround for UNIT_MODEL_CHANGED not firing when a warrior finishes "leap" out of Skyhold, causing fiery/explody model to continue.
+
+05/14/2016 version 2.2.0
+- toc update for 7.0 Legion Beta
+- Fix for first render not working on a new model
+
+01/21/2016 version 2.1.0
+- Rewrote options panel.
+- Restructured settings (some with non-standard settings may need to set them back).
+- Added new option "With Overlay Mask" to add a circular texture over models to soften the corners and make them more round.
+- Added new option "Smaller Portrait" to bring round portraits in even further.
+- "Torso Portrait" mode reworked: model turned to "default rotation" and zoomed in just a bit for a more natural view.
+- "Full Model" mode zoomed in a bit.
+- All animations now (theoretically) use a standing animation without idle animations (such as undead going off camera).
+- Fixed camera issue when changing the UI scale or display size.
+
+2.0.17 01/15/16 brought corners in slightly for "circle" portraits
+2.0.16 06/22/15 toc update for 6.2 patch
+2.0.15 02/24/15 toc update for 6.1 patch
+2.0.14 10/30/14 fix for frames being removed from blacklist staying on blacklist
+2.0.13 10/29/14 fix for achievement comparison portrait
+2.0.12 10/14/14 6.0 patch
+2.0.11 4/9/14 torso portrait option
+2.0.10 10/27/13 fix for blacklisted portraits belonging to an addon that later gets disabled
+2.0.9 09/11/13 toc update for 5.4 patch
+2.0.8 05/21/13 toc update for 5.3 patch
+2.0.7 04/04/13 added blacklist cache, removed debug code
+2.0.6 03/30/13 big rewrite: portraits indexed by the texture itself, not the texture name - instead of a frame with back and model drawn off it, back and model drawn straight to parent of original texture - useParentLevel inherited by models - setCamera replaced with SetPortraitZoom - instead of reacting to every SetPortraitTexture, a SetUnit done only if the GUID changed. At the same time, if a UNIT_MODEL_CHANGED happens, every portrait of that unit will be updated at a lower priority update - rebuilt options frame
+1.92 08/28/12 fixed _ tainting
+1.91 08/27/12 5.0 (Mists of Pandaria) update
+1.9  09/02/10 4.0 (Cataclysm) support, TargetFrameToTPortrait defaulted DontUse
+1.82 10/08/08 scroll fix, /adapt goes to options panel
+1.81 08/08/08 updated for WotLK (toc, this->self)
+1.8  04/12/08 moved options to new interface options, added full model option
+1.71 01/12/07 fixed initialization
+1.7  01/11/07 fixed taint issue with default ToT
+1.6  10/04/06 edits for lua 5.1
+1.5  08/21/06 changed DressUpModel to PlayerModel, moved SetCamera OnUpdate to OnShow
+1.4  06/22/06 disabled mouse on portraits, added known frames to /adapt list
+1.3  06/11/06 /adapt animate/unanimate options, visibility fix by Lafiell, attempt at more flexibility with frameStrata
+1.2  04/01/06 slash options added for circle/square portraits and background
+1.0  03/19/06 initial release
