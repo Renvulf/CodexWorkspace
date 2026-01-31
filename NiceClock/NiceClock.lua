@@ -262,6 +262,21 @@ local PERCHAR_DEFAULTS = {
   petDamage      = tonumber(GetCVar("floatingCombatTextPetMeleeDamage")) == 1,
   periodicDamage = tonumber(GetCVar("floatingCombatTextPeriodicDamage")) == 1,
   combatFont     = nil,  -- e.g. "3.ttf"
+  autoQuestAccept = false,
+  autoQuestTurnIn = false,
+  autoSharedQuestAccept = false,
+  autoAcceptPartyInvite = false,
+  blockPartyInvites = false,
+  blockDuels = false,
+  autoAcceptSummon = false,
+  autoAcceptResurrection = false,
+  autoReleasePvP = false,
+  autoRepairGear = false,
+  classColoredFrames = false,
+  weatherDensityEnabled = false,
+  weatherDensityLevel = 3,
+  skipCinematics = false,
+  maxCameraZoom = false,
 }
 for k, v in pairs(PERCHAR_DEFAULTS) do
   if NiceClockPerCharDB[k] == nil then NiceClockPerCharDB[k] = v end
@@ -1128,6 +1143,77 @@ function frame:ApplyQoLSettings()
     ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
   end
   portraitManager:SetEnabled(NiceClockPerCharDB.enable3dPortraits)
+  self:UpdateWeatherDensity()
+  self:UpdateCameraZoom()
+  self:UpdateClassColoredFrames()
+end
+
+function frame:UpdateWeatherDensity()
+  if not SetCVar then return end
+  local level = tonumber(NiceClockPerCharDB.weatherDensityLevel) or 3
+  if level < 0 then level = 0 end
+  if level > 3 then level = 3 end
+  if NiceClockPerCharDB.weatherDensityEnabled then
+    SetCVar("WeatherDensity", level)
+    SetCVar("RAIDweatherDensity", level)
+  else
+    SetCVar("WeatherDensity", 3)
+    SetCVar("RAIDweatherDensity", 3)
+  end
+end
+
+function frame:UpdateCameraZoom()
+  if not SetCVar then return end
+  if NiceClockPerCharDB.maxCameraZoom then
+    SetCVar("cameraDistanceMaxZoomFactor", 2.6)
+  else
+    SetCVar("cameraDistanceMaxZoomFactor", 1.9)
+  end
+end
+
+function frame:ApplyClassColorToStatusBar(statusbar, unit)
+  if not statusbar or not unit then return end
+  if not UnitIsPlayer or not UnitIsPlayer(unit) then return end
+  local _, class = UnitClass(unit)
+  local color = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+  if color then
+    statusbar:SetStatusBarColor(color.r, color.g, color.b)
+  end
+end
+
+function frame:UpdateClassColoredFrames()
+  if NiceClockPerCharDB.classColoredFrames then
+    local list = {
+      {bar = PlayerFrameHealthBar, unit = "player"},
+      {bar = TargetFrameHealthBar, unit = "target"},
+      {bar = TargetFrameToTHealthBar, unit = "targettarget"},
+      {bar = FocusFrameHealthBar, unit = "focus"},
+      {bar = FocusFrameToTHealthBar, unit = "focustarget"},
+    }
+    for i = 1, 4 do
+      local bar = _G["PartyMemberFrame" .. i .. "HealthBar"]
+      if bar then
+        table.insert(list, {bar = bar, unit = "party" .. i})
+      end
+    end
+    for _, entry in ipairs(list) do
+      self:ApplyClassColorToStatusBar(entry.bar, entry.unit)
+    end
+  else
+    if UnitFrameHealthBar_Update then
+      if PlayerFrameHealthBar then UnitFrameHealthBar_Update(PlayerFrameHealthBar, "player") end
+      if TargetFrameHealthBar then UnitFrameHealthBar_Update(TargetFrameHealthBar, "target") end
+      if TargetFrameToTHealthBar then UnitFrameHealthBar_Update(TargetFrameToTHealthBar, "targettarget") end
+      if FocusFrameHealthBar then UnitFrameHealthBar_Update(FocusFrameHealthBar, "focus") end
+      if FocusFrameToTHealthBar then UnitFrameHealthBar_Update(FocusFrameToTHealthBar, "focustarget") end
+      for i = 1, 4 do
+        local bar = _G["PartyMemberFrame" .. i .. "HealthBar"]
+        if bar then
+          UnitFrameHealthBar_Update(bar, "party" .. i)
+        end
+      end
+    end
+  end
 end
 
 function frame:SellJunkItems()
@@ -1183,6 +1269,13 @@ function frame:MERCHANT_SHOW()
   if NiceClockPerCharDB.autoSellJunk then
     self:SellJunkItems()
   end
+  if NiceClockPerCharDB.autoRepairGear and CanMerchantRepair and CanMerchantRepair() and RepairAllItems then
+    local useGuild = false
+    if CanGuildBankRepair and CanGuildBankRepair() then
+      useGuild = true
+    end
+    RepairAllItems(useGuild)
+  end
 end
 
 function frame:LOOT_READY(event, autoLoot)
@@ -1202,6 +1295,251 @@ function frame:UNIT_MODEL_CHANGED(event, unit)
       portraitManager:UpdateTexture(texture, unit, true)
     end
   end
+end
+
+-- ─── Additional Quality of Life Features ───────────────────────────────────
+function frame:QUEST_DETAIL()
+  if not NiceClockPerCharDB.autoQuestAccept then return end
+  if AcceptQuest then
+    AcceptQuest()
+  end
+end
+
+function frame:QUEST_ACCEPT_CONFIRM(event, questID)
+  if not NiceClockPerCharDB.autoSharedQuestAccept then return end
+  if ConfirmAcceptQuest then
+    ConfirmAcceptQuest()
+  elseif AcceptQuest then
+    AcceptQuest()
+  end
+  if StaticPopup_Hide then
+    StaticPopup_Hide("QUEST_ACCEPT_CONFIRM")
+  end
+end
+
+function frame:QUEST_PROGRESS()
+  if not NiceClockPerCharDB.autoQuestTurnIn then return end
+  if IsQuestCompletable and IsQuestCompletable() and CompleteQuest then
+    CompleteQuest()
+  end
+end
+
+function frame:QUEST_COMPLETE()
+  if not NiceClockPerCharDB.autoQuestTurnIn then return end
+  if not GetNumQuestChoices or not GetQuestReward then return end
+  local choices = GetNumQuestChoices() or 0
+  if choices <= 1 then
+    GetQuestReward(1)
+  end
+end
+
+function frame:GOSSIP_SHOW()
+  if not (NiceClockPerCharDB.autoQuestAccept or NiceClockPerCharDB.autoQuestTurnIn) then return end
+  if C_GossipInfo and C_GossipInfo.GetActiveQuests and C_GossipInfo.SelectActiveQuest then
+    if NiceClockPerCharDB.autoQuestTurnIn then
+      local active = C_GossipInfo.GetActiveQuests()
+      for _, quest in ipairs(active or {}) do
+        if quest.isComplete then
+          return C_GossipInfo.SelectActiveQuest(quest.questID)
+        end
+      end
+    end
+    if NiceClockPerCharDB.autoQuestAccept then
+      local available = C_GossipInfo.GetAvailableQuests()
+      for _, quest in ipairs(available or {}) do
+        if quest.questID then
+          return C_GossipInfo.SelectAvailableQuest(quest.questID)
+        end
+      end
+    end
+  elseif GetNumActiveQuests and GetNumAvailableQuests and SelectActiveQuest and SelectAvailableQuest and GetActiveTitle then
+    if NiceClockPerCharDB.autoQuestTurnIn then
+      for i = 1, GetNumActiveQuests() do
+        local _, isComplete = GetActiveTitle(i)
+        if isComplete then
+          return SelectActiveQuest(i)
+        end
+      end
+    end
+    if NiceClockPerCharDB.autoQuestAccept then
+      if GetNumAvailableQuests() > 0 then
+        return SelectAvailableQuest(1)
+      end
+    end
+  end
+end
+
+function frame:QUEST_GREETING()
+  if not (NiceClockPerCharDB.autoQuestAccept or NiceClockPerCharDB.autoQuestTurnIn) then return end
+  if GetNumActiveQuests and GetActiveTitle and SelectActiveQuest and NiceClockPerCharDB.autoQuestTurnIn then
+    local numActive = GetNumActiveQuests() or 0
+    for i = 1, numActive do
+      local _, isComplete = GetActiveTitle(i)
+      if isComplete then
+        return SelectActiveQuest(i)
+      end
+    end
+  end
+  if NiceClockPerCharDB.autoQuestAccept and GetNumAvailableQuests and SelectAvailableQuest then
+    if GetNumAvailableQuests() > 0 then
+      return SelectAvailableQuest(1)
+    end
+  end
+end
+
+function frame:CONFIRM_SUMMON()
+  if not NiceClockPerCharDB.autoAcceptSummon then return end
+  if InCombatLockdown and InCombatLockdown() then return end
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.1, function()
+      if AcceptSummon then AcceptSummon() end
+    end)
+  elseif AcceptSummon then
+    AcceptSummon()
+  end
+  if StaticPopup_Hide then
+    StaticPopup_Hide("CONFIRM_SUMMON")
+  end
+end
+
+function frame:RESURRECT_REQUEST()
+  if not NiceClockPerCharDB.autoAcceptResurrection then return end
+  if InCombatLockdown and InCombatLockdown() then return end
+  if C_Timer and C_Timer.After then
+    C_Timer.After(0.1, function()
+      if AcceptResurrect then AcceptResurrect() end
+    end)
+  elseif AcceptResurrect then
+    AcceptResurrect()
+  end
+  if StaticPopup_Hide then
+    StaticPopup_Hide("RESURRECT_REQUEST")
+  end
+end
+
+function frame:HasSelfResurrectOption()
+  if C_DeathInfo and C_DeathInfo.GetSelfResurrectOptions then
+    local options = C_DeathInfo.GetSelfResurrectOptions()
+    if options and #options > 0 then
+      return true
+    end
+  end
+  if HasSoulstone and HasSoulstone() then return true end
+  if GetSoulstoneResurrectData then
+    local name = GetSoulstoneResurrectData()
+    if name then return true end
+  end
+  return false
+end
+
+function frame:ShouldAutoRelease()
+  if not NiceClockPerCharDB.autoReleasePvP then return false end
+  if not IsInInstance then return false end
+  local _, instanceType = IsInInstance()
+  if instanceType ~= "pvp" and instanceType ~= "arena" then return false end
+  if self:HasSelfResurrectOption() then return false end
+  return true
+end
+
+function frame:CancelAutoRelease()
+  if self.autoReleaseTimer then
+    self.autoReleaseTimer:Cancel()
+    self.autoReleaseTimer = nil
+  end
+end
+
+function frame:PLAYER_DEAD()
+  if not self:ShouldAutoRelease() then return end
+  self:CancelAutoRelease()
+  if C_Timer and C_Timer.NewTimer then
+    self.autoReleaseTimer = C_Timer.NewTimer(0.5, function()
+      if NiceClockPerCharDB.autoReleasePvP and UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") and RepopMe then
+        RepopMe()
+      end
+    end)
+  elseif RepopMe then
+    RepopMe()
+  end
+end
+
+function frame:PLAYER_UNGHOST()
+  self:CancelAutoRelease()
+end
+
+function frame:PLAYER_ALIVE()
+  self:CancelAutoRelease()
+end
+
+function frame:DUEL_REQUESTED(event, name)
+  if not NiceClockPerCharDB.blockDuels then return end
+  if CancelDuel then CancelDuel() end
+  if StaticPopup_Hide then
+    StaticPopup_Hide("DUEL_REQUESTED")
+  end
+end
+
+function frame:PARTY_INVITE_REQUEST(event, inviter)
+  if NiceClockPerCharDB.blockPartyInvites then
+    if C_PartyInfo and C_PartyInfo.DeclineInvite then
+      C_PartyInfo.DeclineInvite()
+    elseif DeclineGroup then
+      DeclineGroup()
+    elseif DeclineGroupInvite then
+      DeclineGroupInvite()
+    elseif DeclineInvite then
+      DeclineInvite()
+    end
+    if StaticPopup_Hide then
+      StaticPopup_Hide("PARTY_INVITE")
+    end
+    return
+  end
+
+  if not NiceClockPerCharDB.autoAcceptPartyInvite then return end
+  if C_PartyInfo and C_PartyInfo.AcceptInvite then
+    C_PartyInfo.AcceptInvite()
+  elseif AcceptGroup then
+    AcceptGroup()
+  elseif AcceptGroupInvite then
+    AcceptGroupInvite()
+  elseif AcceptInvite then
+    AcceptInvite()
+  end
+  if StaticPopup_Hide then
+    StaticPopup_Hide("PARTY_INVITE")
+  end
+end
+
+function frame:CINEMATIC_START()
+  if not NiceClockPerCharDB.skipCinematics then return end
+  if CinematicFrame_CancelCinematic then
+    CinematicFrame_CancelCinematic()
+  elseif CinematicFrame and CinematicFrame.Hide then
+    CinematicFrame:Hide()
+  end
+end
+
+function frame:PLAY_MOVIE()
+  if not NiceClockPerCharDB.skipCinematics then return end
+  if MovieFrame_StopMovie then
+    MovieFrame_StopMovie()
+  elseif MovieFrame and MovieFrame.Hide then
+    MovieFrame:Hide()
+  end
+end
+
+function frame:PLAYER_TARGET_CHANGED()
+  self:UpdateClassColoredFrames()
+end
+
+function frame:GROUP_ROSTER_UPDATE()
+  self:UpdateClassColoredFrames()
+end
+
+function frame:PLAYER_ENTERING_WORLD()
+  self:UpdateWeatherDensity()
+  self:UpdateCameraZoom()
+  self:UpdateClassColoredFrames()
 end
 
 -- ─── Combat Settings ─────────────────────────────────────────────────────────
@@ -2158,20 +2496,103 @@ function frame:CreateSettingsFrame()
     end, nil, nil, tsText or ts, "BOTTOMLEFT", "TOPLEFT")
 
     local columnOffset = LAYOUT.col2 - LAYOUT.left
-    local rowSpacing = -28
+    local rowSpacing = -26
+    local startOffset = -30
+    local leftAnchor = ht
+    local rightAnchor = ht
 
-    local portraits = CreateCheckbox(p, addonName .. "QoLenable3dPortraitsCB", "3D portraits", columnOffset, 0, NiceClockPerCharDB.enable3dPortraits, function(self)
-      NiceClockPerCharDB.enable3dPortraits = self:GetChecked()
+    local function AddQoLCheckbox(label, settingKey, column, onToggle)
+      local anchor = column == 2 and rightAnchor or leftAnchor
+      local offsetX = column == 2 and columnOffset or 0
+      local offsetY = (anchor == ht) and startOffset or rowSpacing
+      local cb = CreateCheckbox(
+        p,
+        addonName .. "QoL" .. settingKey .. "CB",
+        label,
+        offsetX,
+        offsetY,
+        NiceClockPerCharDB[settingKey],
+        function(self)
+          NiceClockPerCharDB[settingKey] = self:GetChecked()
+          if onToggle then onToggle(self) end
+        end,
+        nil,
+        nil,
+        anchor,
+        "TOPLEFT",
+        "TOPLEFT"
+      )
+      if column == 2 then
+        rightAnchor = cb
+      else
+        leftAnchor = cb
+      end
+      return cb
+    end
+
+    AddQoLCheckbox("3D portraits", "enable3dPortraits", 1, function(self)
       portraitManager:SetEnabled(self:GetChecked())
-    end, nil, nil, ht, "TOPLEFT", "TOPLEFT")
+    end)
+    AddQoLCheckbox("Auto-sell junk", "autoSellJunk", 1)
+    AddQoLCheckbox("Fast autoloot", "fastAutoLoot", 1)
+    AddQoLCheckbox("Auto-accept quests", "autoQuestAccept", 1)
+    AddQoLCheckbox("Auto turn-in quests", "autoQuestTurnIn", 1)
+    AddQoLCheckbox("Auto-accept shared quests", "autoSharedQuestAccept", 1)
+    AddQoLCheckbox("Auto-accept party invites", "autoAcceptPartyInvite", 1)
+    AddQoLCheckbox("Block party invites", "blockPartyInvites", 1)
+    AddQoLCheckbox("Block duels", "blockDuels", 1)
 
-    local autoSell = CreateCheckbox(p, addonName .. "QoLautoSellJunkCB", "Auto-sell junk", 0, rowSpacing, NiceClockPerCharDB.autoSellJunk, function(self)
-      NiceClockPerCharDB.autoSellJunk = self:GetChecked()
-    end, nil, nil, ht, "TOPLEFT", "TOPLEFT")
+    AddQoLCheckbox("Auto-accept summons", "autoAcceptSummon", 2)
+    AddQoLCheckbox("Auto-accept resurrection", "autoAcceptResurrection", 2)
+    AddQoLCheckbox("Auto release in PvP", "autoReleasePvP", 2)
+    AddQoLCheckbox("Repair gear automatically", "autoRepairGear", 2)
+    AddQoLCheckbox("Class-colored frames", "classColoredFrames", 2, function()
+      frame:UpdateClassColoredFrames()
+    end)
+    AddQoLCheckbox("Skip cinematics", "skipCinematics", 2)
+    AddQoLCheckbox("Increase camera zoom", "maxCameraZoom", 2, function()
+      frame:UpdateCameraZoom()
+    end)
+    local weatherToggle = AddQoLCheckbox("Adjust weather density", "weatherDensityEnabled", 2, function()
+      frame:UpdateWeatherDensity()
+    end)
 
-    local fastLoot = CreateCheckbox(p, addonName .. "QoLfastAutoLootCB", "Fast autoloot", columnOffset, 0, NiceClockPerCharDB.fastAutoLoot, function(self)
-      NiceClockPerCharDB.fastAutoLoot = self:GetChecked()
-    end, nil, nil, autoSell, "TOPLEFT", "TOPLEFT")
+    local weatherSlider = CreateFrame("Slider", "NiceClockWeatherDensitySlider", p, "OptionsSliderTemplate")
+    weatherSlider:SetPoint("TOPLEFT", weatherToggle, "BOTTOMLEFT", -columnOffset, -18)
+    weatherSlider:SetMinMaxValues(0, 3)
+    weatherSlider:SetValueStep(1)
+    weatherSlider:SetWidth(sliderWidth)
+    weatherSlider:SetValue(NiceClockPerCharDB.weatherDensityLevel or 3)
+    _G["NiceClockWeatherDensitySliderLow"]:SetText("0")
+    _G["NiceClockWeatherDensitySliderHigh"]:SetText("3")
+    local densityNames = {"Off", "Low", "Medium", "High"}
+    local function UpdateWeatherText(value)
+      local idx = math.floor((value or 0) + 0.5) + 1
+      _G["NiceClockWeatherDensitySliderText"]:SetText("Weather Density: " .. (value or 0) .. " (" .. (densityNames[idx] or "High") .. ")")
+    end
+    UpdateWeatherText(NiceClockPerCharDB.weatherDensityLevel or 3)
+    weatherSlider:SetScript("OnValueChanged", function(self, value)
+      local v = math.floor((value or 0) + 0.5)
+      NiceClockPerCharDB.weatherDensityLevel = v
+      UpdateWeatherText(v)
+      if NiceClockPerCharDB.weatherDensityEnabled then
+        frame:UpdateWeatherDensity()
+      end
+    end)
+    weatherSlider:SetEnabled(NiceClockPerCharDB.weatherDensityEnabled and true or false)
+    if weatherSlider.EnableMouse then
+      weatherSlider:EnableMouse(NiceClockPerCharDB.weatherDensityEnabled and true or false)
+    end
+
+    weatherToggle:HookScript("OnClick", function(self)
+      local enabled = self:GetChecked()
+      weatherSlider:SetEnabled(enabled)
+      if weatherSlider.EnableMouse then
+        weatherSlider:EnableMouse(enabled)
+      end
+      weatherSlider:SetAlpha(enabled and 1 or 0.5)
+    end)
+    weatherSlider:SetAlpha(NiceClockPerCharDB.weatherDensityEnabled and 1 or 0.5)
   end
 
   -- Track Panel
@@ -2663,6 +3084,24 @@ frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("LOOT_READY")
 frame:RegisterEvent("LOOT_CLOSED")
 frame:RegisterEvent("UNIT_MODEL_CHANGED")
+frame:RegisterEvent("QUEST_DETAIL")
+frame:RegisterEvent("QUEST_ACCEPT_CONFIRM")
+frame:RegisterEvent("QUEST_PROGRESS")
+frame:RegisterEvent("QUEST_COMPLETE")
+frame:RegisterEvent("QUEST_GREETING")
+frame:RegisterEvent("GOSSIP_SHOW")
+frame:RegisterEvent("CONFIRM_SUMMON")
+frame:RegisterEvent("RESURRECT_REQUEST")
+frame:RegisterEvent("PLAYER_DEAD")
+frame:RegisterEvent("PLAYER_UNGHOST")
+frame:RegisterEvent("PLAYER_ALIVE")
+frame:RegisterEvent("DUEL_REQUESTED")
+frame:RegisterEvent("PARTY_INVITE_REQUEST")
+frame:RegisterEvent("CINEMATIC_START")
+frame:RegisterEvent("PLAY_MOVIE")
+frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 frame:SetScript("OnEvent", function(self, event, ...)
   if event == "PLAYER_LOGIN" then
@@ -2707,6 +3146,23 @@ frame:SetScript("OnEvent", function(self, event, ...)
         portraitManager:UpdateTexture(texture, unit)
       end)
       self.portraitHooked = true
+    end
+    if not self.classColorHooked then
+      if UnitFrameHealthBar_Update then
+        hooksecurefunc("UnitFrameHealthBar_Update", function(statusbar, unit)
+          if NiceClockPerCharDB.classColoredFrames then
+            frame:ApplyClassColorToStatusBar(statusbar, unit)
+          end
+        end)
+      end
+      if CompactUnitFrame_UpdateHealthColor then
+        hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(compactFrame)
+          if NiceClockPerCharDB.classColoredFrames and compactFrame and compactFrame.unit and compactFrame.healthBar then
+            frame:ApplyClassColorToStatusBar(compactFrame.healthBar, compactFrame.unit)
+          end
+        end)
+      end
+      self.classColorHooked = true
     end
     -- BEGIN FIX: Ensure the clock is draggable on first login (no settings changes required)
     self:EnsureClockHitbox()
