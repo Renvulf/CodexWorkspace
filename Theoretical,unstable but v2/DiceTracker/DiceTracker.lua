@@ -40,6 +40,7 @@ local LSTMNetwork = {
 
 -- Ensure cellState and hiddenState are properly sized
 function LSTMNetwork:resetStates()
+    if not self.hiddenSize then return end
     for i = 1, self.hiddenSize do
         self.cellState[i] = 0
         self.hiddenState[i] = 0
@@ -262,8 +263,22 @@ end
 
 -- UI Initialization and Stats Update
 
--- Buffer for tracking dice toss events
-local tossBuffer = {player = nil, time = 0, rolls = {}}
+-- Buffer for tracking dice toss events per player
+local pendingRolls = {}
+
+local function isWornTrollDiceEmote(msg)
+    if not msg then return false end
+    if not msg:find("Worn Troll Dice") then return false end
+    return msg:find("tosses") or msg:find("uses")
+end
+
+local function cleanupPendingRolls(now)
+    for player, data in pairs(pendingRolls) do
+        if (now - data.time) > 10 then
+            pendingRolls[player] = nil
+        end
+    end
+end
 
 local function getBucket(t)
     return floor((t % 60) / 5) + 1
@@ -1582,6 +1597,11 @@ function initializeAddonData()
     -- Ensure LSTM network data structures are initialized
     DiceTrackerDB.learningData.lstmNetworkData.outcomeCountForTraining = DiceTrackerDB.learningData.lstmNetworkData.outcomeCountForTraining or 0
 
+    DiceTrackerDB.stats = DiceTrackerDB.stats or {}
+    DiceTrackerDB.stats.deltaMean = DiceTrackerDB.stats.deltaMean or 60
+    DiceTrackerDB.stats.deltaVar = DiceTrackerDB.stats.deltaVar or 1
+    DiceTrackerDB.stats.deltaCount = DiceTrackerDB.stats.deltaCount or 0
+
     -- Ensure predictor data structures are initialized
     DiceTrackerDB.weights = DiceTrackerDB.weights or {W1={}, b1={}, W2={}, b2={}}
     DiceTrackerDB.buckets = DiceTrackerDB.buckets or {}
@@ -1607,13 +1627,26 @@ DiceTrackerDB.initialized = true
 
     if not addonTable.retrainTicker then
         addonTable.retrainTicker = C_Timer.NewTicker(600, function()
+            local function sample(tbl, n)
+                local res = {}
+                if not tbl then return res end
+                for i = 1, math.min(n, #tbl) do
+                    local idx = math.random(1, #tbl)
+                    res[#res + 1] = tbl[idx]
+                end
+                return res
+            end
             local function prioritizedSample(buf, n)
                 table.sort(buf, function(a,b) return (a.priority or 0) > (b.priority or 0) end)
                 local res = {}
                 for i=1,math.min(n,#buf) do res[i] = buf[i] end
                 return res
             end
-            local batch = prioritizedSample(DiceTrackerDB.learningData.replayBuffer, 128)
+            local batch = sample(DiceTrackerDB.learningData.slidingWindow, 64)
+            local replay = prioritizedSample(DiceTrackerDB.learningData.replayBuffer, 64)
+            for _, item in ipairs(replay) do
+                batch[#batch + 1] = item
+            end
             if #batch > 0 and LSTMNetwork.batchTrain then
                 LSTMNetwork:batchTrain(batch)
             end
@@ -1733,7 +1766,7 @@ processRollPair = function(player, roll1, roll2)
         local prob = DiceTrackerDB.stats.lastPredictionConfidence or 0
         if math.abs(prob - 0.5) < 0.1 then
             local rb = DiceTrackerDB.learningData.replayBuffer
-            table.insert(rb, {inputs=fv, cat=cat, priority = 1 - math.abs(prob - 0.5)})
+            table.insert(rb, {inputs=fv, cat=cat, rolls={roll1, roll2}, priority = 1 - math.abs(prob - 0.5)})
             if #rb > 1000 then table.remove(rb,1) end
         end
 
@@ -1823,37 +1856,32 @@ frame:SetScript("OnEvent", function(self, event, ...)
         local msg, player = ...
         -- Detect the emote indicating a dice toss from the Worn Troll Dice toy
         -- Match the text regardless of item link color codes or gendered pronouns
-        if msg and msg:find("casually tosses") and msg:find("%[Worn Troll Dice%]") then
-            if tossBuffer.player and time() - tossBuffer.time <= 10 then
-                tossBuffer.rolls = {}
+        if isWornTrollDiceEmote(msg) then
+            local name = Ambiguate(player, "none")
+            if name then
+                pendingRolls[name] = pendingRolls[name] or {rolls = {}, time = 0}
+                pendingRolls[name].rolls = {}
+                pendingRolls[name].time = time()
             end
-            tossBuffer.player = Ambiguate(player, "none")
-            tossBuffer.time = time()
-            tossBuffer.rolls = {}
         end
     elseif event == "CHAT_MSG_SYSTEM" then
         local message = ...
         -- match the roll message from the dice, allowing any text within the parentheses
         local player, roll = message:match("^(.-) rolls (%d+) %b()$")
         player = player and Ambiguate(player, "none") or nil
+        local now = time()
+        cleanupPendingRolls(now)
 
-        if tossBuffer.player and player == tossBuffer.player and roll then
-            table.insert(tossBuffer.rolls, tonumber(roll))
-            if #tossBuffer.rolls == 2 then
-                -- hand the two-dice result off to your real tracker:
-                processRollPair(tossBuffer.player,
-                                tossBuffer.rolls[1],
-                                tossBuffer.rolls[2])
-                -- reset for the next toss:
-                tossBuffer.player = nil
-                tossBuffer.rolls  = {}
-                -- immediately refresh the UI
-                maybeUpdateUI()
+        if player and roll and pendingRolls[player] then
+            local value = tonumber(roll)
+            if value and value >= 1 and value <= 6 then
+                table.insert(pendingRolls[player].rolls, value)
+                if #pendingRolls[player].rolls == 2 then
+                    processRollPair(player, pendingRolls[player].rolls[1], pendingRolls[player].rolls[2])
+                    pendingRolls[player] = nil
+                    maybeUpdateUI()
+                end
             end
-        end
-        if tossBuffer.player and time() - tossBuffer.time > 10 then
-            tossBuffer.player = nil
-            tossBuffer.rolls = {}
         end
     end
 end)
