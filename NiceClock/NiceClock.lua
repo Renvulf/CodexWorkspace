@@ -2571,6 +2571,11 @@ function frame:CreateSettingsFrame()
     weatherSlider:SetValue(NiceClockPerCharDB.weatherDensityLevel or 3)
     _G["NiceClockWeatherDensitySliderLow"]:SetText("0")
     _G["NiceClockWeatherDensitySliderHigh"]:SetText("3")
+    local weatherText = _G["NiceClockWeatherDensitySliderText"]
+    if weatherText then
+      weatherText:ClearAllPoints()
+      weatherText:SetPoint("TOP", weatherSlider, "BOTTOM", 0, -6)
+    end
     local densityNames = {"Off", "Low", "Medium", "High"}
     local function UpdateWeatherText(value)
       local idx = math.floor((value or 0) + 0.5) + 1
