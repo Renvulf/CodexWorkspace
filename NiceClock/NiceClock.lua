@@ -2129,7 +2129,7 @@ function frame:CreateSettingsFrame()
     local p = panels[3]
     local sliderWidth = 320
     local ts = CreateFrame("Slider","NiceClockTrackerSizeSlider",p,"OptionsSliderTemplate")
-    ts:SetPoint("TOP", p, "TOP", 0, LAYOUT.top + 70)
+    ts:SetPoint("TOPLEFT", LAYOUT.left, LAYOUT.top)
     ts:SetMinMaxValues(0.5,2); ts:SetValueStep(0.05); ts:SetWidth(sliderWidth)
     ts:SetValue(NiceClockPerCharDB.trackerScale or 1)
     ts:SetScript("OnValueChanged",function(self,v)
@@ -2143,56 +2143,35 @@ function frame:CreateSettingsFrame()
     _G["NiceClockTrackerSizeSliderHigh"]:SetText("2")
     _G["NiceClockTrackerSizeSliderText"]:SetText("Objective Tracker Scale: "..string.format("%.2f", (NiceClockPerCharDB.trackerScale or 1)))
 
-    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", LAYOUT.left, LAYOUT.top - 20, NiceClockPerCharDB.hideTracker, function(self)
+    local tsText = _G[ts:GetName() .. "Text"]
+    if tsText then
+      tsText:ClearAllPoints()
+      tsText:SetPoint("TOPLEFT", ts, "BOTTOMLEFT", 0, -18)
+      tsText:SetJustifyH("LEFT")
+    end
+
+    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", 0, -12, NiceClockPerCharDB.hideTracker, function(self)
       NiceClockPerCharDB.hideTracker = self:GetChecked()
       if ObjectiveTrackerFrame then
         if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
       end
-    end)
+    end, nil, nil, tsText or ts, "BOTTOMLEFT", "TOPLEFT")
 
-    local qolOptions = {
-      {
-        key = "enable3dPortraits",
-        label = "3D portraits",
-        handler = function(checked)
-          NiceClockPerCharDB.enable3dPortraits = checked
-          portraitManager:SetEnabled(checked)
-        end,
-      },
-      {
-        key = "autoSellJunk",
-        label = "Auto-sell junk",
-        handler = function(checked)
-          NiceClockPerCharDB.autoSellJunk = checked
-        end,
-      },
-      {
-        key = "fastAutoLoot",
-        label = "Fast autoloot",
-        handler = function(checked)
-          NiceClockPerCharDB.fastAutoLoot = checked
-        end,
-      },
-    }
+    local columnOffset = LAYOUT.col2 - LAYOUT.left
+    local rowSpacing = -28
 
-    local prev = ht
-    local spacing = -30
-    for _, opt in ipairs(qolOptions) do
-      prev = CreateCheckbox(
-        p,
-        addonName .. "QoL" .. opt.key .. "CB",
-        opt.label,
-        0,
-        spacing,
-        NiceClockPerCharDB[opt.key],
-        function(self) opt.handler(self:GetChecked()) end,
-        nil,
-        nil,
-        prev,
-        "BOTTOMLEFT",
-        "TOPLEFT"
-      )
-    end
+    local portraits = CreateCheckbox(p, addonName .. "QoLenable3dPortraitsCB", "3D portraits", columnOffset, 0, NiceClockPerCharDB.enable3dPortraits, function(self)
+      NiceClockPerCharDB.enable3dPortraits = self:GetChecked()
+      portraitManager:SetEnabled(self:GetChecked())
+    end, nil, nil, ht, "TOPLEFT", "TOPLEFT")
+
+    local autoSell = CreateCheckbox(p, addonName .. "QoLautoSellJunkCB", "Auto-sell junk", 0, rowSpacing, NiceClockPerCharDB.autoSellJunk, function(self)
+      NiceClockPerCharDB.autoSellJunk = self:GetChecked()
+    end, nil, nil, ht, "TOPLEFT", "TOPLEFT")
+
+    local fastLoot = CreateCheckbox(p, addonName .. "QoLfastAutoLootCB", "Fast autoloot", columnOffset, 0, NiceClockPerCharDB.fastAutoLoot, function(self)
+      NiceClockPerCharDB.fastAutoLoot = self:GetChecked()
+    end, nil, nil, autoSell, "TOPLEFT", "TOPLEFT")
   end
 
   -- Track Panel
