@@ -2129,7 +2129,7 @@ function frame:CreateSettingsFrame()
     local p = panels[3]
     local sliderWidth = 320
     local ts = CreateFrame("Slider","NiceClockTrackerSizeSlider",p,"OptionsSliderTemplate")
-    ts:SetPoint("TOP", p, "TOP", 0, LAYOUT.top + 40)
+    ts:SetPoint("TOP", p, "TOP", 0, LAYOUT.top + 70)
     ts:SetMinMaxValues(0.5,2); ts:SetValueStep(0.05); ts:SetWidth(sliderWidth)
     ts:SetValue(NiceClockPerCharDB.trackerScale or 1)
     ts:SetScript("OnValueChanged",function(self,v)
@@ -2143,13 +2143,12 @@ function frame:CreateSettingsFrame()
     _G["NiceClockTrackerSizeSliderHigh"]:SetText("2")
     _G["NiceClockTrackerSizeSliderText"]:SetText("Objective Tracker Scale: "..string.format("%.2f", (NiceClockPerCharDB.trackerScale or 1)))
 
-    local hideOffsetX = -(sliderWidth / 2) + LAYOUT.left
-    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", hideOffsetX, -30, NiceClockPerCharDB.hideTracker, function(self)
+    local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", LAYOUT.left, LAYOUT.top - 20, NiceClockPerCharDB.hideTracker, function(self)
       NiceClockPerCharDB.hideTracker = self:GetChecked()
       if ObjectiveTrackerFrame then
         if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
       end
-    end, nil, nil, ts, "BOTTOMLEFT", "TOPLEFT")
+    end)
 
     local qolOptions = {
       {
