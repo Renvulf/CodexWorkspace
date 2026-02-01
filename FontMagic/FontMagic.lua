@@ -450,7 +450,25 @@ local slider = CreateFrame("Slider", addonName .. "ScaleSlider", frame, "Options
 slider:SetSize(300, 16)
 slider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -8)
 
-local scaleSupported = GetCVar("WorldTextScale") ~= nil
+local function GetCombatTextScaleCVar()
+    local candidates = {"WorldTextScale", "floatingCombatTextScale"}
+    for _, cvar in ipairs(candidates) do
+        local value
+        if type(C_CVar) == "table" and type(C_CVar.GetCVar) == "function" then
+            value = C_CVar.GetCVar(cvar)
+        end
+        if value == nil and type(GetCVar) == "function" then
+            value = GetCVar(cvar)
+        end
+        if value ~= nil then
+            return cvar, value
+        end
+    end
+    return nil, nil
+end
+
+local scaleCVar, scaleCVarValue = GetCombatTextScaleCVar()
+local scaleSupported = scaleCVar ~= nil
 
 if scaleSupported then
     slider:SetMinMaxValues(0.5, 5.0)
@@ -473,12 +491,16 @@ scaleValue:SetPoint("BOTTOM", slider, "TOP", 0, 2)
 local function UpdateScale(val)
     if not scaleSupported then return end
     val = math.floor(val * 10 + 0.5) / 10
-    SetCVar("WorldTextScale", tostring(val))
+    if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
+        C_CVar.SetCVar(scaleCVar, tostring(val))
+    else
+        SetCVar(scaleCVar, tostring(val))
+    end
     scaleValue:SetText(string.format("%.1f", val))
 end
 
 if scaleSupported then
-    local currentScale = tonumber(GetCVar("WorldTextScale")) or 1.0
+    local currentScale = tonumber(scaleCVarValue) or 1.0
     slider:SetValue(currentScale)
     scaleValue:SetText(string.format("%.1f", currentScale))
     slider:SetScript("OnValueChanged", function(self,val) UpdateScale(val) end)
