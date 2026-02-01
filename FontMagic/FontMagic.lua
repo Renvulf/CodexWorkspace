@@ -25,6 +25,28 @@ end
 -- detect whether the BackdropTemplate mixin exists (Retail only)
 local backdropTemplate = (BackdropTemplateMixin and "BackdropTemplate") or nil
 
+local function GetCVarString(cvar)
+    if type(C_CVar) == "table" and type(C_CVar.GetCVar) == "function" then
+        local value = C_CVar.GetCVar(cvar)
+        if value ~= nil then
+            return value
+        end
+    end
+    if type(GetCVar) == "function" then
+        return GetCVar(cvar)
+    end
+    return nil
+end
+
+local function SetCVarString(cvar, value)
+    if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
+        return C_CVar.SetCVar(cvar, value)
+    end
+    if type(SetCVar) == "function" then
+        return SetCVar(cvar, value)
+    end
+end
+
 --[[
     ---------------------------------------------------------------------------
     Compatibility shim for Dragonflight/Midnight settings API (patch ≥10.0.0).
@@ -112,14 +134,14 @@ FontMagicPCDB = FontMagicPCDB or {}
 local minimapButton
 
 local PERCHAR_DEFAULTS = {
-    combatHealing  = tonumber(GetCVar("floatingCombatTextCombatHealing")) == 1,
-    combatDamage   = tonumber(GetCVar("floatingCombatTextCombatDamage")) == 1,
-    petDamage      = tonumber(GetCVar("floatingCombatTextPetMeleeDamage")) == 1,
+    combatHealing  = tonumber(GetCVarString("floatingCombatTextCombatHealing")) == 1,
+    combatDamage   = tonumber(GetCVarString("floatingCombatTextCombatDamage")) == 1,
+    petDamage      = tonumber(GetCVarString("floatingCombatTextPetMeleeDamage")) == 1,
     -- WoW's CVar controlling periodic spell damage visibility is
     -- "floatingCombatTextCombatLogPeriodicSpells".  The previous code used
     -- "floatingCombatTextPeriodicDamage" which doesn't exist and resulted in the
     -- setting not persisting between sessions.
-    periodicDamage = tonumber(GetCVar("floatingCombatTextCombatLogPeriodicSpells")) == 1,
+    periodicDamage = tonumber(GetCVarString("floatingCombatTextCombatLogPeriodicSpells")) == 1,
     -- incoming healing and damage defaults
     incomingDamage  = true,
     incomingHealing = true,
@@ -453,13 +475,7 @@ slider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -8)
 local function GetCombatTextScaleCVar()
     local candidates = {"WorldTextScale", "floatingCombatTextScale"}
     for _, cvar in ipairs(candidates) do
-        local value
-        if type(C_CVar) == "table" and type(C_CVar.GetCVar) == "function" then
-            value = C_CVar.GetCVar(cvar)
-        end
-        if value == nil and type(GetCVar) == "function" then
-            value = GetCVar(cvar)
-        end
+        local value = GetCVarString(cvar)
         if value ~= nil then
             return cvar, value
         end
@@ -470,19 +486,6 @@ end
 local scaleCVar, scaleCVarValue = GetCombatTextScaleCVar()
 local scaleSupported = scaleCVar ~= nil
 
-if scaleSupported then
-    slider:SetMinMaxValues(0.5, 5.0)
-    slider:SetValueStep(0.1)
-    slider:SetObeyStepOnDrag(true)
-    _G[slider:GetName() .. "Low"]:SetText("0.5")
-    _G[slider:GetName() .. "High"]:SetText("5.0")
-else
-    slider:Disable()
-    scaleLabel:SetTextColor(0.5, 0.5, 0.5)
-    _G[slider:GetName() .. "Low"]:SetText("")
-    _G[slider:GetName() .. "High"]:SetText("")
-end
-
 local scaleValue = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 scaleValue:ClearAllPoints()
 -- center the slider value text 2px above the bar
@@ -491,34 +494,49 @@ scaleValue:SetPoint("BOTTOM", slider, "TOP", 0, 2)
 local function UpdateScale(val)
     if not scaleSupported then return end
     val = math.floor(val * 10 + 0.5) / 10
-    if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
-        C_CVar.SetCVar(scaleCVar, tostring(val))
-    else
-        SetCVar(scaleCVar, tostring(val))
-    end
+    SetCVarString(scaleCVar, tostring(val))
     scaleValue:SetText(string.format("%.1f", val))
 end
 
-if scaleSupported then
-    local currentScale = tonumber(scaleCVarValue) or 1.0
-    slider:SetValue(currentScale)
-    scaleValue:SetText(string.format("%.1f", currentScale))
-    slider:SetScript("OnValueChanged", function(self,val) UpdateScale(val) end)
-    slider:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Drag to adjust combat text size",1,1,1)
-        GameTooltip:Show()
-    end)
-    slider:SetScript("OnLeave", GameTooltip_Hide)
-else
-    scaleValue:SetText("|cff888888N/A|r")
-    slider:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Not available in this version of WoW", nil, nil, nil, nil, true)
-        GameTooltip:Show()
-    end)
+local function RefreshScaleControl()
+    scaleCVar, scaleCVarValue = GetCombatTextScaleCVar()
+    scaleSupported = scaleCVar ~= nil
+
+    if scaleSupported then
+        slider:SetMinMaxValues(0.5, 5.0)
+        slider:SetValueStep(0.1)
+        slider:SetObeyStepOnDrag(true)
+        _G[slider:GetName() .. "Low"]:SetText("0.5")
+        _G[slider:GetName() .. "High"]:SetText("5.0")
+        slider:Enable()
+        scaleLabel:SetTextColor(1, 1, 1)
+        local currentScale = tonumber(scaleCVarValue)
+            or tonumber(GetCVarString(scaleCVar)) or 1.0
+        slider:SetValue(currentScale)
+        scaleValue:SetText(string.format("%.1f", currentScale))
+        slider:SetScript("OnValueChanged", function(self, val) UpdateScale(val) end)
+        slider:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Drag to adjust combat text size", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+    else
+        slider:Disable()
+        scaleLabel:SetTextColor(0.5, 0.5, 0.5)
+        _G[slider:GetName() .. "Low"]:SetText("")
+        _G[slider:GetName() .. "High"]:SetText("")
+        scaleValue:SetText("|cff888888N/A|r")
+        slider:SetScript("OnValueChanged", nil)
+        slider:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Not available in this version of WoW", nil, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+    end
     slider:SetScript("OnLeave", GameTooltip_Hide)
 end
+
+RefreshScaleControl()
 
 -- 6) PREVIEW & EDIT ---------------------------------------------------------
 preview = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -553,6 +571,33 @@ local opts = {
     -- Use the correct CVar so the option persists between sessions
     {k="periodicDamage", l="Show Periodic Damage", c="floatingCombatTextCombatLogPeriodicSpells"},
 }
+
+local function UpdateCheckboxForCVar(opt)
+    local data = optionCheckboxes[opt.k]
+    if not data then return end
+    local cvarValue = GetCVarString(opt.c)
+    local supported = cvarValue ~= nil
+    data.cvarSupported = supported
+
+    local cb = data.box
+    if supported then
+        cb:Enable()
+        if cb.text then
+            cb.text:SetTextColor(1, 1, 1)
+        end
+        cb:SetScript("OnClick", function(self)
+            FontMagicPCDB[opt.k] = self:GetChecked()
+            SetCVarString(opt.c, self:GetChecked() and "1" or "0")
+        end)
+    else
+        cb:Disable()
+        if cb.text then
+            cb.text:SetTextColor(0.5, 0.5, 0.5)
+        end
+        cb:SetScript("OnClick", nil)
+    end
+end
+
 for i, opt in ipairs(opts) do
     local col = (i - 1) % 2
     local row = math.floor((i - 1) / 2)
@@ -561,33 +606,19 @@ for i, opt in ipairs(opts) do
     local x = (col == 0) and 0 or (CB_COL_W + 16)
     local y = -16 - row * 30
 
-    local cvarSupported = type(GetCVar) == "function" and GetCVar(opt.c) ~= nil
-    local onClick
-    if cvarSupported then
-        onClick = function(self)
-            FontMagicPCDB[opt.k] = self:GetChecked()
-            if type(SetCVar) == "function" then
-                SetCVar(opt.c, self:GetChecked() and "1" or "0")
-            end
-        end
-    else
-        onClick = nil
-    end
-
     -- initially anchor at origin; we reposition immediately after
-    local cb = CreateCheckbox(frame, opt.l, 0, 0, FontMagicPCDB[opt.k], onClick)
+    local cb = CreateCheckbox(frame, opt.l, 0, 0, FontMagicPCDB[opt.k], nil)
     cb:ClearAllPoints()
     cb:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", x, y)
 
-    if not cvarSupported then
-        -- grey out checkboxes for unsupported CVars so layout remains intact
-        cb:Disable()
-        if cb.text then
-            cb.text:SetTextColor(0.5, 0.5, 0.5)
-        end
-    end
-
     optionCheckboxes[opt.k] = { box = cb, cvar = opt.c }
+    UpdateCheckboxForCVar(opt)
+end
+
+local function RefreshCombatTextCVars()
+    for _, opt in ipairs(opts) do
+        UpdateCheckboxForCVar(opt)
+    end
 end
 
 -- 8) APPLY & DEFAULT BUTTONS -----------------------------------------------
@@ -692,9 +723,8 @@ defaultBtn:SetScript("OnClick", function()
     for k,data in pairs(optionCheckboxes) do
         data.box:SetChecked(true)
         FontMagicPCDB[k] = true
-        if type(GetCVar) == "function" and type(SetCVar) == "function" and
-           data.cvar and GetCVar(data.cvar) ~= nil then
-            SetCVar(data.cvar, "1")
+        if data.cvar and GetCVarString(data.cvar) ~= nil then
+            SetCVarString(data.cvar, "1")
         end
     end
 
@@ -955,8 +985,8 @@ local function ApplySavedSettings()
     -- 1) Combat-text CVars & checkboxes
     for key, data in pairs(optionCheckboxes) do
         local enabled = FontMagicPCDB[key]
-        if data.cvar and type(SetCVar)=="function" and GetCVar(data.cvar) then
-            pcall(SetCVar, data.cvar, enabled and "1" or "0")
+        if data.cvar and GetCVarString(data.cvar) ~= nil then
+            pcall(SetCVarString, data.cvar, enabled and "1" or "0")
         end
         if data.box then
             data.box:SetChecked(enabled)
@@ -1038,13 +1068,19 @@ frame:SetScript("OnEvent", function(self, event, name)
                 UIDropDownMenu_SetText(dropdowns[g], f:gsub("%.otf$",""):gsub("%.ttf$",""))
             end
         end
+        RefreshCombatTextCVars()
+        RefreshScaleControl()
         ApplySavedSettings()  -- ensure nothing slips through
     elseif event == "ADDON_LOADED" and name == "Blizzard_CombatText" then
         -- combat text addon has loaded after FontMagic; initialise controls now
         InitializeIncomingControls()
+        RefreshCombatTextCVars()
+        RefreshScaleControl()
         ApplySavedSettings()
     elseif event == "PLAYER_LOGIN" then
         -- all other addons loaded, CVars available
+        RefreshCombatTextCVars()
+        RefreshScaleControl()
         ApplySavedSettings()
         -- Ensure minimap button visibility persists across reloads/logins.
         -- Some users reported that the minimap button would reappear after
