@@ -1133,15 +1133,29 @@ function frame:CreateLDB()
 end
 
 -- ─── QoL Settings ───────────────────────────────────────────────────────────
-function frame:ApplyQoLSettings()
-  if ObjectiveTrackerFrame then
+function frame:HookObjectiveTracker()
+  if self.objectiveTrackerHooked or not ObjectiveTrackerFrame then return end
+  ObjectiveTrackerFrame:HookScript("OnShow", function()
     if NiceClockPerCharDB.hideTracker then
       ObjectiveTrackerFrame:Hide()
-    else
-      ObjectiveTrackerFrame:Show()
     end
-    ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
+  end)
+  self.objectiveTrackerHooked = true
+end
+
+function frame:ApplyObjectiveTrackerState()
+  if not ObjectiveTrackerFrame then return end
+  if NiceClockPerCharDB.hideTracker then
+    ObjectiveTrackerFrame:Hide()
+  else
+    ObjectiveTrackerFrame:Show()
   end
+  ObjectiveTrackerFrame:SetScale(NiceClockPerCharDB.trackerScale or 1)
+  self:HookObjectiveTracker()
+end
+
+function frame:ApplyQoLSettings()
+  self:ApplyObjectiveTrackerState()
   portraitManager:SetEnabled(NiceClockPerCharDB.enable3dPortraits)
   self:UpdateWeatherDensity()
   self:UpdateCameraZoom()
@@ -1537,6 +1551,7 @@ function frame:GROUP_ROSTER_UPDATE()
 end
 
 function frame:PLAYER_ENTERING_WORLD()
+  self:ApplyObjectiveTrackerState()
   self:UpdateWeatherDensity()
   self:UpdateCameraZoom()
   self:UpdateClassColoredFrames()
@@ -2473,9 +2488,7 @@ function frame:CreateSettingsFrame()
     ts:SetScript("OnValueChanged",function(self,v)
       NiceClockPerCharDB.trackerScale = v
       _G[self:GetName().."Text"]:SetText("Objective Tracker Scale: "..string.format("%.2f", v))
-      if ObjectiveTrackerFrame then
-        ObjectiveTrackerFrame:SetScale(v)
-      end
+      frame:ApplyObjectiveTrackerState()
     end)
     _G["NiceClockTrackerSizeSliderLow"]:SetText("0.5")
     _G["NiceClockTrackerSizeSliderHigh"]:SetText("2")
@@ -2490,9 +2503,7 @@ function frame:CreateSettingsFrame()
 
     local ht = CreateCheckbox(p, "NiceClockHideTrackerCB", "Hide Objective Tracker", 0, -12, NiceClockPerCharDB.hideTracker, function(self)
       NiceClockPerCharDB.hideTracker = self:GetChecked()
-      if ObjectiveTrackerFrame then
-        if self:GetChecked() then ObjectiveTrackerFrame:Hide() else ObjectiveTrackerFrame:Show() end
-      end
+      frame:ApplyObjectiveTrackerState()
     end, nil, nil, tsText or ts, "BOTTOMLEFT", "TOPLEFT")
 
     local columnOffset = LAYOUT.col2 - LAYOUT.left
