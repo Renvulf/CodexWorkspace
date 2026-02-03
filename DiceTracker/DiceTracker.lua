@@ -1444,6 +1444,7 @@ local function onSystemEvent(msg, lineID)
   end
 
   who = normalizeWhitespace(stripColorAndTextures(who))
+  who = canonicalizeActorKey(who)
   if not isValidActorName(who) then
     bumpDrop("roll_actor_ambiguous")
     return
@@ -2007,6 +2008,21 @@ function DiceTracker.RunSelfTest()
       assertEq("self_roll_actor", whoS, selfActorKey(), failures)
       assertEq("self_roll_value", rollS, 3, failures)
       assertEq("self_roll_range", (minS == 1 and maxS == 6), true, failures)
+    end
+  end
+
+  -- 2d) Fallback "You rolls" parsing should map to the local player
+  local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
+  local selfKey2 = selfActorKey()
+  openPendingToss("Player-SELFROLL", selfKey2, 900023, "Player-SELFROLL")
+  local beforeYouFallback = pendingByActorName(selfKey2)
+  assertEq("pending_self_before_you_fallback", beforeYouFallback ~= nil, true, failures)
+  onSystemEvent(youWord .. " rolls 4 (1-6)", 900024)
+  local pendingSelfAfter = pendingByActorName(selfKey2)
+  assertEq("pending_self_one_die_fallback", (pendingSelfAfter and pendingSelfAfter.rolls and #pendingSelfAfter.rolls == 1), true, failures)
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == selfKey2 then
+      RT.pending[k] = nil
     end
   end
 
