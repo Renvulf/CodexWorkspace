@@ -256,7 +256,7 @@ end
 local RT = {
   itemName = nil,
 
-  pending = {}, -- [actorKey] = { t0, rolls={...}, tossLineID, tossGuid, expireToken }
+  pending = {}, -- [actorKeyPrimary] = { actorKeyPrimary, actorName, t0, rolls={...}, tossLineID, tossGuid, expireToken }
   lastConfirmedActor = nil,
   lastConfirmedTime = 0,
 
@@ -1082,14 +1082,27 @@ end
 -- Pending pairing helpers
 -- -----------------------------
 local function resolvePendingKey(rollActor)
-  if RT.pending[rollActor] then return rollActor end
+  local directMatch = nil
+  local directCount = 0
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == rollActor then
+      directMatch = k
+      directCount = directCount + 1
+    end
+  end
+  if directCount == 1 then
+    return directMatch
+  elseif directCount > 1 then
+    return nil -- ambiguous
+  end
 
   local rollBase = baseName(rollActor)
   if not rollBase then return nil end
 
   local found = nil
-  for k in pairs(RT.pending) do
-    if baseName(k) == rollBase then
+  for k, entry in pairs(RT.pending) do
+    local entryName = entry and entry.actorName
+    if entryName and baseName(entryName) == rollBase then
       if found and found ~= k then
         return nil -- ambiguous
       end
@@ -1109,16 +1122,20 @@ local function expirePending(actorKey, token)
   DiceTracker.UpdateUI()
 end
 
-local function openPendingToss(actorKey, lineID, guid)
+local function openPendingToss(actorKeyPrimary, actorName, lineID, guid)
   local now = safeNow()
+  if not actorKeyPrimary or actorKeyPrimary == "" then return end
+  if not actorName or actorName == "" then return end
 
-  if RT.pending[actorKey] then
-    RT.pending[actorKey] = nil
+  if RT.pending[actorKeyPrimary] then
+    RT.pending[actorKeyPrimary] = nil
     bumpDrop("pending_overwritten")
   end
 
   local token = now + math.random() -- token to avoid stale timer clears
-  RT.pending[actorKey] = {
+  RT.pending[actorKeyPrimary] = {
+    actorKeyPrimary = actorKeyPrimary,
+    actorName = actorName,
     t0 = now,
     rolls = {},
     tossLineID = lineID,
@@ -1128,7 +1145,7 @@ local function openPendingToss(actorKey, lineID, guid)
 
   if C_Timer and C_Timer.After then
     C_Timer.After(MAX_WAIT_SECONDS + 0.1, function()
-      expirePending(actorKey, token)
+      expirePending(actorKeyPrimary, token)
     end)
   end
 end
@@ -1234,28 +1251,36 @@ local function onTossEvent(event, msg, sender, lineID, guid)
     return
   end
 
-  local actorKey = sender and cleanMessage(sender) or nil
-  actorKey = normalizeWhitespace(stripColorAndTextures(actorKey or ""))
+  local actorName = sender and cleanMessage(sender) or nil
+  actorName = normalizeWhitespace(stripColorAndTextures(actorName or ""))
 
-  if not isValidActorName(actorKey) then
+  if not isValidActorName(actorName) then
     -- best-effort parse from message start if sender is missing
     if type(msg) == "string" then
       local parsed = cleanMessage(msg):match("^([^%s]+)%s")
       if parsed and isValidActorName(parsed) then
-        actorKey = parsed
+        actorName = parsed
       end
     end
   end
 
-  if not isValidActorName(actorKey) then
+  if not isValidActorName(actorName) then
     bumpDrop("toss_actor_ambiguous")
     return
   end
 
-  RT.lastConfirmedActor = actorKey
+  actorName = canonicalizeActorKey(actorName)
+  if not isValidActorName(actorName) then
+    bumpDrop("toss_actor_ambiguous")
+    return
+  end
+
+  local actorKeyPrimary = (type(guid) == "string" and guid ~= "") and guid or actorName
+
+  RT.lastConfirmedActor = actorName
   RT.lastConfirmedTime = safeNow()
 
-  openPendingToss(actorKey, lineID, guid)
+  openPendingToss(actorKeyPrimary, actorName, lineID, guid)
 
   DiceTracker.UpdateUI()
 end
@@ -1323,7 +1348,7 @@ local function onSystemEvent(msg, lineID)
 
   if #rolls == 2 then
     RT.pending[key] = nil
-    finalizeSample(key, rolls[1], rolls[2])
+    finalizeSample(entry.actorName or key, rolls[1], rolls[2])
   elseif #rolls > 2 then
     RT.pending[key] = nil
     bumpDrop("pending_overflow")
@@ -1695,6 +1720,14 @@ function DiceTracker.RunSelfTest()
   if not DiceTrackerDB then return end
 
   local failures = {}
+  local function pendingByActorName(name)
+    for _, entry in pairs(RT.pending) do
+      if entry and entry.actorName == name then
+        return entry
+      end
+    end
+    return nil
+  end
 
   -- Snapshot state so the self-test never contaminates learned data.
   local backupDB = deepCopy(DiceTrackerDB)
@@ -1727,7 +1760,7 @@ function DiceTracker.RunSelfTest()
   local itemLink = "|cffffffff|Hitem:" .. ITEM_ID .. ":0:0:0:0:0:0:0:0|h[Worn Troll Dice]|h|r"
   local emoteMsg = actor .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsg, actor, 90001, "Player-TEST1")
-  assertEq("pending_opened_hyperlink", RT.pending[actor] ~= nil, true, failures)
+  assertEq("pending_opened_hyperlink", pendingByActorName(actor) ~= nil, true, failures)
   assertEq("auto_target_recent", RT.lastConfirmedActor, actor, failures)
 
   -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
@@ -1743,25 +1776,34 @@ function DiceTracker.RunSelfTest()
   local actorB = "SelfTest-B"
   local emoteMsgB = actorB .. " casually tosses [" .. RT.itemName .. "]."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgB, actorB, 90002, "Player-TEST2")
-  assertEq("pending_opened_name_fallback", RT.pending[actorB] ~= nil, true, failures)
+  assertEq("pending_opened_name_fallback", pendingByActorName(actorB) ~= nil, true, failures)
   -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
   local emoteMsgYou = youWord .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgYou, nil, 900021, "Player-SELFTESTYOU")
-  assertEq("pending_opened_you_no_sender", RT.pending[selfKey] ~= nil, true, failures)
+  assertEq("pending_opened_you_no_sender", pendingByActorName(selfKey) ~= nil, true, failures)
 
   -- Feed one localized self roll line (if we can format it) and verify pairing sticks to selfKey without finalizing.
   if type(_G.RANDOM_ROLL_RESULT_SELF) == "string" then
     local okFmtY, selfMsgY = pcall(string.format, _G.RANDOM_ROLL_RESULT_SELF, 2, 1, 6)
     if okFmtY and type(selfMsgY) == "string" then
       onSystemEvent(selfMsgY, 900022)
-      assertEq("pending_one_die_you", (RT.pending[selfKey] and RT.pending[selfKey].dice and #RT.pending[selfKey].dice == 1), true, failures)
+      local pendingSelf = pendingByActorName(selfKey)
+      assertEq("pending_one_die_you", (pendingSelf and pendingSelf.rolls and #pendingSelf.rolls == 1), true, failures)
     end
   end
-  RT.pending[selfKey] = nil
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == selfKey then
+      RT.pending[k] = nil
+    end
+  end
 
-  RT.pending[actorB] = nil
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorB then
+      RT.pending[k] = nil
+    end
+  end
   RT.selfTestItemNameGate = nil
   RT.itemName = keepName
 
@@ -1771,7 +1813,7 @@ function DiceTracker.RunSelfTest()
   onSystemEvent(rollMsg1, 90003)
   onSystemEvent(rollMsg2, 90004)
 
-  assertEq("pending_cleared_after_two", RT.pending[actor] == nil, true, failures)
+  assertEq("pending_cleared_after_two", pendingByActorName(actor) == nil, true, failures)
   assertEq("lastSample_bucket_low", DiceTrackerDB.lastSample and DiceTrackerDB.lastSample.bucket, "low", failures)
 
   -- 2b) Fallback roll parsing with dash glyph: must still require (1–6)
@@ -1799,15 +1841,50 @@ function DiceTracker.RunSelfTest()
   assertEq("drop_increment_roll_no_pending", DiceTrackerDB.drop.total, beforeDrops + 1, failures)
 
   -- 3b) Ambiguous baseName pairing must drop and not consume any pending sessions
-  openPendingToss("Dup-RealmA", 90006, "Player-DUPA")
-  openPendingToss("Dup-RealmB", 90007, "Player-DUPB")
+  openPendingToss("Player-DUPA", "Dup-RealmA", 90006, "Player-DUPA")
+  openPendingToss("Player-DUPB", "Dup-RealmB", 90007, "Player-DUPB")
   local beforeAmbig = DiceTrackerDB.drop.total
   onSystemEvent("Dup rolls 3 (1-6)", 90008)
-  assertEq("ambig_pending_keptA", RT.pending["Dup-RealmA"] ~= nil, true, failures)
-  assertEq("ambig_pending_keptB", RT.pending["Dup-RealmB"] ~= nil, true, failures)
+  assertEq("ambig_pending_keptA", pendingByActorName("Dup-RealmA") ~= nil, true, failures)
+  assertEq("ambig_pending_keptB", pendingByActorName("Dup-RealmB") ~= nil, true, failures)
   assertEq("ambig_drop_increment", DiceTrackerDB.drop.total, beforeAmbig + 1, failures)
-  RT.pending["Dup-RealmA"] = nil
-  RT.pending["Dup-RealmB"] = nil
+  for k, entry in pairs(RT.pending) do
+    if entry and (entry.actorName == "Dup-RealmA" or entry.actorName == "Dup-RealmB") then
+      RT.pending[k] = nil
+    end
+  end
+
+  -- 3c) Wrong actor roll does not consume pending
+  openPendingToss("Player-WRONG", "RightActor", 90009, "Player-WRONG")
+  local beforeWrong = DiceTrackerDB.drop.total
+  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "OtherActor", 3, 1, 6), 90010)
+  assertEq("wrong_actor_drop", DiceTrackerDB.drop.total, beforeWrong + 1, failures)
+  assertEq("wrong_actor_pending_kept", pendingByActorName("RightActor") ~= nil, true, failures)
+
+  -- 3d) Only one roll then timeout should drop
+  local pendingRight = pendingByActorName("RightActor")
+  if pendingRight then
+    onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "RightActor", 4, 1, 6), 90011)
+    pendingRight.t0 = safeNow() - (MAX_WAIT_SECONDS + 1)
+    local beforeTimeout = DiceTrackerDB.drop.total
+    onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "RightActor", 5, 1, 6), 90012)
+    assertEq("timeout_drop_increment", DiceTrackerDB.drop.total, beforeTimeout + 1, failures)
+  end
+
+  -- 3e) Three rolls should overflow and drop
+  openPendingToss("Player-THREE", "TripleActor", 90013, "Player-THREE")
+  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 1, 1, 6), 90014)
+  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 2, 1, 6), 90015)
+  local beforeOverflow = DiceTrackerDB.drop.total
+  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 3, 1, 6), 90016)
+  assertEq("overflow_drop_increment", DiceTrackerDB.drop.total, beforeOverflow + 1, failures)
+  assertEq("overflow_pending_cleared", pendingByActorName("TripleActor") == nil, true, failures)
+
+  -- 3f) Wrong range should drop
+  openPendingToss("Player-RANGE", "RangeActor", 90017, "Player-RANGE")
+  local beforeRange = DiceTrackerDB.drop.total
+  onSystemEvent("RangeActor rolls 6 (1-20)", 90018)
+  assertEq("wrong_range_drop", DiceTrackerDB.drop.total, beforeRange + 1, failures)
 
   -- 4) Probability normalization / rounding to 100.0
   local perc = roundedPercentsTo100({ low = 0.333333, seven = 0.333333, high = 0.333334 })
