@@ -583,10 +583,22 @@ DiceTrackerDB = nil
 -- -----------------------------
 -- Item confirmation for toss
 -- -----------------------------
+local function getItemNameNow()
+  if RT.selfTesting and RT.selfTestItemNameGate then
+    local gate = RT.selfTestItemNameGate
+    if type(gate.remaining) == "number" and gate.remaining > 0 then
+      gate.remaining = gate.remaining - 1
+      return nil
+    end
+    return gate.name
+  end
+  return GetItemInfo and GetItemInfo(ITEM_ID) or nil
+end
+
 local function refreshItemName(attempt)
   attempt = attempt or 0
   if attempt > 8 then return end
-  local name = GetItemInfo and GetItemInfo(ITEM_ID) or nil
+  local name = getItemNameNow()
   if name and name ~= "" then
     RT.itemName = name
     return
@@ -1188,9 +1200,11 @@ local function onTossEvent(event, msg, sender, lineID, guid)
 
   -- Ensure itemName is populated if possible (helps when the toss line includes only the localized item name).
   if (not hasAnyItemLink) and (not RT.itemName or RT.itemName == "") then
-    local name = GetItemInfo and GetItemInfo(ITEM_ID) or nil
+    local name = getItemNameNow()
     if name and name ~= "" then
       RT.itemName = name
+    elseif C_Timer and C_Timer.After and not RT.selfTesting then
+      refreshItemName(0)
     end
   end
 
@@ -1716,9 +1730,16 @@ function DiceTracker.RunSelfTest()
   assertEq("pending_opened_hyperlink", RT.pending[actor] ~= nil, true, failures)
   assertEq("auto_target_recent", RT.lastConfirmedActor, actor, failures)
 
-  -- 1b) Toss confirmation via item name fallback
+  -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
-  RT.itemName = "Worn Troll Dice"
+  RT.itemName = nil
+  RT.selfTestItemNameGate = { remaining = 2, name = "Worn Troll Dice" }
+  refreshItemName(0)
+  refreshItemName(1)
+  assertEq("item_name_still_nil_before_gate", RT.itemName == nil, true, failures)
+  refreshItemName(2)
+  assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
+
   local actorB = "SelfTest-B"
   local emoteMsgB = actorB .. " casually tosses [" .. RT.itemName .. "]."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgB, actorB, 90002, "Player-TEST2")
@@ -1741,6 +1762,7 @@ function DiceTracker.RunSelfTest()
   RT.pending[selfKey] = nil
 
   RT.pending[actorB] = nil
+  RT.selfTestItemNameGate = nil
   RT.itemName = keepName
 
   -- 2) Roll parsing + pairing: two d6 rolls should finalize exactly one sample
@@ -1950,4 +1972,3 @@ f:SetScript("OnEvent", function(_, event, ...)
     return
   end
 end)
-
