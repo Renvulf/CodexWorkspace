@@ -26,6 +26,8 @@ local FAIR_ANCHOR = {
 
 local SCHEMA_VERSION = 5
 
+local RT
+
 -- Expert parameters
 local KT_ALPHA_BUCKET = 0.5
 local RHO_FAST = 0.03
@@ -115,6 +117,24 @@ local function selfActorKey()
     if n and n ~= "" then return n end
   end
   return UnitName and UnitName("player") or "?"
+end
+
+local function targetActorKey()
+  if RT.selfTesting and RT.selfTestTargetKey then
+    return RT.selfTestTargetKey
+  end
+  if not UnitExists or not UnitIsPlayer then return nil end
+  if not UnitExists("target") or not UnitIsPlayer("target") then return nil end
+  if UnitFullName then
+    local n, r = UnitFullName("target")
+    if n and n ~= "" then
+      if r and r ~= "" then
+        return n .. "-" .. r
+      end
+      return n
+    end
+  end
+  return nil
 end
 
 local function isValidActorName(name)
@@ -253,7 +273,7 @@ end
 -- -----------------------------
 -- Runtime state
 -- -----------------------------
-local RT = {
+RT = {
   itemName = nil,
 
   pending = {}, -- [actorKeyPrimary] = { actorKeyPrimary, actorName, t0, rolls={...}, tossLineID, tossGuid, expireToken }
@@ -1069,12 +1089,18 @@ local function computeActorCombinedPrediction(actorKey)
 end
 
 local function recommendationFromProbs(p)
-  local bestK = "low"
-  local bestV = tonumber(p.low) or 0
-  local v7 = tonumber(p.seven) or 0
+  local vL = tonumber(p.low) or 0
   local vH = tonumber(p.high) or 0
-  if v7 > bestV then bestK, bestV = "seven", v7 end
-  if vH > bestV then bestK, bestV = "high", vH end
+  local v7 = tonumber(p.seven) or 0
+
+  -- Deterministic tie-break: Low > High > Seven
+  local bestK, bestV = "low", vL
+  if vH > bestV or (vH == bestV and bestK ~= "low") then
+    bestK, bestV = "high", vH
+  end
+  if v7 > bestV then
+    bestK, bestV = "seven", v7
+  end
   return bestK
 end
 
@@ -1199,6 +1225,21 @@ local function finalizeSample(actorKey, die1, die2)
     die2 = die2,
     sum = sum,
     bucket = bucket,
+    gates = {
+      mode = combinedMeta.mode,
+      combinedGate = combinedMeta.combinedGate,
+      actorAdv = combinedMeta.actorAdv,
+      global = {
+        gate = globalMeta.gate,
+        bestAdv = globalMeta.bestAdv,
+        mass = globalMeta.mass,
+      },
+      actor = {
+        gate = actorMeta.gate,
+        bestAdv = actorMeta.bestAdv,
+        mass = actorMeta.mass,
+      },
+    },
   }
 
   RT.lastDebug.lastSample = shallowCopy(db.lastSample)
@@ -1396,11 +1437,11 @@ local function computeEffectiveTarget()
   end
 
   -- auto
-  local now = safeNow()
-  if RT.lastConfirmedActor and (now - (RT.lastConfirmedTime or 0)) <= AUTO_WINDOW then
-    return RT.lastConfirmedActor, "auto"
+  local targetKey = targetActorKey()
+  if targetKey then
+    return targetKey, "auto-target"
   end
-  return selfActorKey(), "auto"
+  return "GLOBAL", "auto-global"
 end
 
 local function selectionText()
@@ -1522,7 +1563,7 @@ local function createUI()
 
   local target = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   target:SetPoint("TOPLEFT", 12, -62)
-  target:SetText("Target: -")
+  target:SetText("Next: -")
   ui.target = target
 
   local rec = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -1639,6 +1680,30 @@ local function formatDebugOverlay(targetKey, combinedMeta, combinedProbs)
     )
   end
 
+  local function gateSummary(prefix, info)
+    if type(info) ~= "table" then return end
+    local gGate = info.global and info.global.gate
+    local gAdv = info.global and info.global.bestAdv
+    local gMass = info.global and info.global.mass
+    local aGate = info.actor and info.actor.gate
+    local aAdv = info.actor and info.actor.bestAdv
+    local aMass = info.actor and info.actor.mass
+    local parts = {
+      prefix .. string.format(" mode=%s", tostring(info.mode or "?")),
+      string.format("globalGate=%.2f adv=%.3f mass=%d", tonumber(gGate) or 0, tonumber(gAdv) or 0, tonumber(gMass) or 0),
+    }
+    if info.mode == "actor" then
+      parts[#parts + 1] = string.format("actorGate=%.2f adv=%.3f mass=%d", tonumber(aGate) or 0, tonumber(aAdv) or 0, tonumber(aMass) or 0)
+      parts[#parts + 1] = string.format("shrink=%.2f actorAdv=%.3f", tonumber(info.combinedGate) or 0, tonumber(info.actorAdv) or 0)
+    end
+    line[#line + 1] = table.concat(parts, "  ")
+  end
+
+  gateSummary("Now:", combinedMeta)
+  if ls and type(ls.gates) == "table" then
+    gateSummary("Last sample:", ls.gates)
+  end
+
   -- Self-test status
   if RT.lastDebug.selfTest and RT.lastDebug.selfTest.ran then
     local ok = RT.lastDebug.selfTest.ok and "PASS" or "FAIL"
@@ -1670,7 +1735,7 @@ function DiceTracker.UpdateUI()
 
   UIDropDownMenu_SetText(ui.dropdown, selectionText())
 
-  ui.target:SetText("Target: " .. tostring(displayTarget))
+  ui.target:SetText("Next: " .. tostring(displayTarget))
   ui.recommend:SetText("Recommend: " .. (BUCKET_LABEL[rec] or tostring(rec)))
 
   ui.probs:SetText(string.format("Low: %.1f%%   Seven: %.1f%%   High: %.1f%%",
@@ -1740,6 +1805,7 @@ function DiceTracker.RunSelfTest()
     ttlSeen = deepCopy(RT.ttlSeen),
     itemName = RT.itemName,
     selfTesting = RT.selfTesting,
+    selfTestTargetKey = RT.selfTestTargetKey,
   }
 
   -- Isolate runtime + DB
@@ -1754,6 +1820,15 @@ function DiceTracker.RunSelfTest()
   DiceTrackerDB = migrateIfNeeded({})
   _G.DiceTrackerDB = DiceTrackerDB
   ensureActorModel(selfActorKey())
+
+  -- 0) Auto-target behavior (target player vs global)
+  DiceTrackerDB.settings.target.mode = "auto"
+  RT.selfTestTargetKey = "SelfTest-Target"
+  local autoKey = computeEffectiveTarget()
+  assertEq("auto_target_key", autoKey, "SelfTest-Target", failures)
+  RT.selfTestTargetKey = nil
+  local autoGlobalKey = computeEffectiveTarget()
+  assertEq("auto_target_global", autoGlobalKey, "GLOBAL", failures)
 
   -- 1) Toss confirmation via hyperlink
   local actor = "SelfTest-A"
@@ -1910,6 +1985,7 @@ function DiceTracker.RunSelfTest()
   RT.ttlSeen = backupRuntime.ttlSeen
   RT.itemName = backupRuntime.itemName
   RT.selfTesting = backupRuntime.selfTesting
+  RT.selfTestTargetKey = backupRuntime.selfTestTargetKey
 
   RT.lastDebug.selfTest = RT.lastDebug.selfTest or {}
   RT.lastDebug.selfTest.ran = true
