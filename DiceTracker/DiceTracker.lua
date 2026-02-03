@@ -1868,6 +1868,18 @@ function DiceTracker.RunSelfTest()
   if not DiceTrackerDB then return end
 
   local failures = {}
+  local function safeFormatRoll(fmt, ...)
+    if type(fmt) ~= "string" then
+      failures[#failures + 1] = "RANDOM_ROLL_RESULT format missing"
+      return nil
+    end
+    local ok, msg = pcall(string.format, fmt, ...)
+    if not ok or type(msg) ~= "string" then
+      failures[#failures + 1] = "RANDOM_ROLL_RESULT format failed"
+      return nil
+    end
+    return msg
+  end
   local function pendingByActorName(name)
     for _, entry in pairs(RT.pending) do
       if entry and entry.actorName == name then
@@ -1970,10 +1982,12 @@ function DiceTracker.RunSelfTest()
   RT.itemName = keepName
 
   -- 2) Roll parsing + pairing: two d6 rolls should finalize exactly one sample
-  local rollMsg1 = string.format(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
-  local rollMsg2 = string.format(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
-  onSystemEvent(rollMsg1, 90003)
-  onSystemEvent(rollMsg2, 90004)
+  local rollMsg1 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
+  local rollMsg2 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
+  if rollMsg1 and rollMsg2 then
+    onSystemEvent(rollMsg1, 90003)
+    onSystemEvent(rollMsg2, 90004)
+  end
 
   assertEq("pending_cleared_after_two", pendingByActorName(actor) == nil, true, failures)
   assertEq("lastSample_bucket_low", DiceTrackerDB.lastSample and DiceTrackerDB.lastSample.bucket, "low", failures)
@@ -1998,8 +2012,10 @@ function DiceTracker.RunSelfTest()
 
   -- 3) Roll without pending must be dropped
   local beforeDrops = DiceTrackerDB.drop.total
-  local strayMsg = string.format(_G.RANDOM_ROLL_RESULT, "SomeoneElse", 2, 1, 6)
-  onSystemEvent(strayMsg, 90005)
+  local strayMsg = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "SomeoneElse", 2, 1, 6)
+  if strayMsg then
+    onSystemEvent(strayMsg, 90005)
+  end
   assertEq("drop_increment_roll_no_pending", DiceTrackerDB.drop.total, beforeDrops + 1, failures)
 
   -- 3a) Non-roll system messages should be ignored (no drop)
@@ -2024,26 +2040,44 @@ function DiceTracker.RunSelfTest()
   -- 3c) Wrong actor roll does not consume pending
   openPendingToss("Player-WRONG", "RightActor", 90009, "Player-WRONG")
   local beforeWrong = DiceTrackerDB.drop.total
-  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "OtherActor", 3, 1, 6), 90010)
+  local wrongMsg = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "OtherActor", 3, 1, 6)
+  if wrongMsg then
+    onSystemEvent(wrongMsg, 90010)
+  end
   assertEq("wrong_actor_drop", DiceTrackerDB.drop.total, beforeWrong + 1, failures)
   assertEq("wrong_actor_pending_kept", pendingByActorName("RightActor") ~= nil, true, failures)
 
   -- 3d) Only one roll then timeout should drop
   local pendingRight = pendingByActorName("RightActor")
   if pendingRight then
-    onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "RightActor", 4, 1, 6), 90011)
+    local rightMsg1 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "RightActor", 4, 1, 6)
+    if rightMsg1 then
+      onSystemEvent(rightMsg1, 90011)
+    end
     pendingRight.t0 = safeNow() - (MAX_WAIT_SECONDS + 1)
     local beforeTimeout = DiceTrackerDB.drop.total
-    onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "RightActor", 5, 1, 6), 90012)
+    local rightMsg2 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "RightActor", 5, 1, 6)
+    if rightMsg2 then
+      onSystemEvent(rightMsg2, 90012)
+    end
     assertEq("timeout_drop_increment", DiceTrackerDB.drop.total, beforeTimeout + 1, failures)
   end
 
   -- 3e) Three rolls should overflow and drop
   openPendingToss("Player-THREE", "TripleActor", 90013, "Player-THREE")
-  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 1, 1, 6), 90014)
-  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 2, 1, 6), 90015)
+  local tripleMsg1 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "TripleActor", 1, 1, 6)
+  local tripleMsg2 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "TripleActor", 2, 1, 6)
+  if tripleMsg1 then
+    onSystemEvent(tripleMsg1, 90014)
+  end
+  if tripleMsg2 then
+    onSystemEvent(tripleMsg2, 90015)
+  end
   local beforeOverflow = DiceTrackerDB.drop.total
-  onSystemEvent(string.format(_G.RANDOM_ROLL_RESULT, "TripleActor", 3, 1, 6), 90016)
+  local tripleMsg3 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "TripleActor", 3, 1, 6)
+  if tripleMsg3 then
+    onSystemEvent(tripleMsg3, 90016)
+  end
   assertEq("overflow_drop_increment", DiceTrackerDB.drop.total, beforeOverflow + 1, failures)
   assertEq("overflow_pending_cleared", pendingByActorName("TripleActor") == nil, true, failures)
 
