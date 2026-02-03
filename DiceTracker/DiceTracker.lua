@@ -1283,22 +1283,7 @@ local function resolvePendingKey(rollActor)
   elseif directCount > 1 then
     return nil -- ambiguous
   end
-
-  local rollBase = baseName(rollActor)
-  if not rollBase then return nil end
-
-  local found = nil
-  for k, entry in pairs(RT.pending) do
-    local entryName = entry and entry.actorName
-    if entryName and baseName(entryName) == rollBase then
-      if found and found ~= k then
-        return nil -- ambiguous
-      end
-      found = k
-    end
-  end
-
-  return found
+  return nil
 end
 
 local function expirePending(actorKey, token)
@@ -2173,6 +2158,18 @@ function DiceTracker.RunSelfTest()
   assertEq("ambig_drop_increment", DiceTrackerDB.drop.total, beforeAmbig + 1, failures)
   for k, entry in pairs(RT.pending) do
     if entry and (entry.actorName == "Dup-RealmA" or entry.actorName == "Dup-RealmB") then
+      RT.pending[k] = nil
+    end
+  end
+
+  -- 3b2) Base-name roll must not match realm-qualified pending session
+  openPendingToss("Player-REALM", "RealmActor-MyRealm", 900081, "Player-REALM")
+  local beforeBaseName = DiceTrackerDB.drop.total
+  onSystemEvent("RealmActor rolls 4 (1-6)", 900082)
+  assertEq("basename_no_match_pending_kept", pendingByActorName("RealmActor-MyRealm") ~= nil, true, failures)
+  assertEq("basename_no_match_drop_increment", DiceTrackerDB.drop.total, beforeBaseName + 1, failures)
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == "RealmActor-MyRealm" then
       RT.pending[k] = nil
     end
   end
