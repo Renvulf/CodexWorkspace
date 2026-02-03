@@ -1367,8 +1367,8 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   actorName = normalizeWhitespace(stripColorAndTextures(actorName or ""))
 
   if not isValidActorName(actorName) then
-    -- best-effort parse from message start if sender is missing
-    if type(msg) == "string" then
+    -- Only parse from the message if the sender is missing (not provided by the event payload).
+    if not sender and type(msg) == "string" then
       local parsed = cleanMessage(msg):match("^([^%s]+)%s")
       if parsed and isValidActorName(parsed) then
         actorName = parsed
