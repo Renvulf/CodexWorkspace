@@ -63,6 +63,9 @@ local MAX_WAIT_SECONDS = 8
 local LINEID_LRU_MAX = 256
 local TTL_DEDUPE_MAX = 256
 local TTL_DEDUPE_SECONDS = 4
+local ITEMNAME_RETRY_MAX = 3
+local ITEMNAME_RETRY_DELAY = 0.6
+local UNKNOWN_TOSS_MAX = 64
 
 -- -----------------------------
 -- Utilities
@@ -288,6 +291,8 @@ RT = {
     lastSample = nil,
     selfTest = { ran = false, ok = true, details = "" },
   },
+
+  pendingUnknownTosses = {}, -- [key]=entry (bounded)
 }
 
 local function dedupeLineID(lineID)
@@ -603,6 +608,8 @@ DiceTrackerDB = nil
 -- -----------------------------
 -- Item confirmation for toss
 -- -----------------------------
+local onTossEvent
+
 local function getItemNameNow()
   if RT.selfTesting and RT.selfTestItemNameGate then
     local gate = RT.selfTestItemNameGate
@@ -626,6 +633,63 @@ local function refreshItemName(attempt)
   if (not RT.selfTesting) and C_Timer and C_Timer.After then
     C_Timer.After(1.5, function() refreshItemName(attempt + 1) end)
   end
+end
+
+local function processPendingUnknownTosses()
+  local keys = {}
+  for k in pairs(RT.pendingUnknownTosses) do
+    keys[#keys + 1] = k
+  end
+  for _, k in ipairs(keys) do
+    local entry = RT.pendingUnknownTosses[k]
+    if entry then
+      local name = getItemNameNow()
+      if name and name ~= "" then
+        RT.itemName = name
+        RT.pendingUnknownTosses[k] = nil
+        onTossEvent(entry.event, entry.msg, entry.sender, entry.lineID, entry.guid, false)
+      else
+        entry.attempts = (entry.attempts or 0) + 1
+        if entry.attempts >= ITEMNAME_RETRY_MAX then
+          RT.pendingUnknownTosses[k] = nil
+          bumpDrop("toss_item_unknown")
+        elseif (not RT.selfTesting) and C_Timer and C_Timer.After then
+          C_Timer.After(ITEMNAME_RETRY_DELAY, function()
+            processPendingUnknownTosses()
+          end)
+        end
+      end
+    end
+  end
+end
+
+local function queueUnknownToss(event, msg, sender, lineID, guid)
+  local cleanedMsg = cleanMessage(msg)
+  local key
+  if type(lineID) == "number" then
+    key = "L|" .. lineID
+  else
+    key = tostring(event) .. "|" .. tostring(sender or "?") .. "|" .. tostring(cleanedMsg)
+  end
+  if RT.pendingUnknownTosses[key] then return end
+
+  local count = 0
+  for _ in pairs(RT.pendingUnknownTosses) do count = count + 1 end
+  if count >= UNKNOWN_TOSS_MAX then
+    bumpDrop("toss_unknown_overflow")
+    return
+  end
+
+  RT.pendingUnknownTosses[key] = {
+    event = event,
+    msg = msg,
+    sender = sender,
+    lineID = lineID,
+    guid = guid,
+    attempts = 0,
+  }
+
+  processPendingUnknownTosses()
 end
 
 local function isConfirmedTossMessage(msg)
@@ -726,6 +790,18 @@ local function parseRollLine(msg)
   end
 
   return nil
+end
+
+local function isPotentialRollMessage(msg)
+  if type(msg) ~= "string" then return false end
+  msg = cleanMessage(msg)
+  if not rollPatternOther or not rollPatternSelf then
+    buildRollPatterns()
+  end
+  if rollPatternOther and msg:match(rollPatternOther) then return true end
+  if rollPatternSelf and msg:match(rollPatternSelf) then return true end
+  if msg:match("%(%s*%d+%s*[-–—]%s*%d+%s*%)$") then return true end
+  return false
 end
 
 -- -----------------------------
@@ -1250,7 +1326,8 @@ end
 -- -----------------------------
 -- Event handlers (capture / pairing)
 -- -----------------------------
-local function onTossEvent(event, msg, sender, lineID, guid)
+local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
+  if allowQueue == nil then allowQueue = true end
   -- Prefilter: ignore unrelated emotes to keep drop counters meaningful.
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
@@ -1261,8 +1338,15 @@ local function onTossEvent(event, msg, sender, lineID, guid)
     local name = getItemNameNow()
     if name and name ~= "" then
       RT.itemName = name
-    elseif C_Timer and C_Timer.After and not RT.selfTesting then
-      refreshItemName(0)
+    else
+      local hasBracketedItem = cleanedMsg:find("%[[^%]]+%]") ~= nil
+      if allowQueue and hasBracketedItem then
+        queueUnknownToss(event, msg, sender, lineID, guid)
+      end
+      if (not RT.selfTesting) and C_Timer and C_Timer.After then
+        refreshItemName(0)
+      end
+      return
     end
   end
 
@@ -1327,10 +1411,9 @@ local function onTossEvent(event, msg, sender, lineID, guid)
 end
 
 local function onSystemEvent(msg, lineID)
-  -- Prefilter: only consider messages that look like roll lines (end with a numeric range in parens).
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
-  if not cleanedMsg:match("%(%s*%d+%s*[-–—]%s*%d+%s*%)$") then
+  if not isPotentialRollMessage(cleanedMsg) then
     return
   end
   msg = cleanedMsg
@@ -1806,6 +1889,7 @@ function DiceTracker.RunSelfTest()
     itemName = RT.itemName,
     selfTesting = RT.selfTesting,
     selfTestTargetKey = RT.selfTestTargetKey,
+    pendingUnknownTosses = deepCopy(RT.pendingUnknownTosses),
   }
 
   -- Isolate runtime + DB
@@ -1816,6 +1900,7 @@ function DiceTracker.RunSelfTest()
   RT.lineIdSeen = {}
   RT.lineIdQueue = {}
   RT.ttlSeen = {}
+  RT.pendingUnknownTosses = {}
 
   DiceTrackerDB = migrateIfNeeded({})
   _G.DiceTrackerDB = DiceTrackerDB
@@ -1841,16 +1926,18 @@ function DiceTracker.RunSelfTest()
   -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
   RT.itemName = nil
-  RT.selfTestItemNameGate = { remaining = 2, name = "Worn Troll Dice" }
-  refreshItemName(0)
-  refreshItemName(1)
-  assertEq("item_name_still_nil_before_gate", RT.itemName == nil, true, failures)
-  refreshItemName(2)
-  assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
+  RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
 
   local actorB = "SelfTest-B"
-  local emoteMsgB = actorB .. " casually tosses [" .. RT.itemName .. "]."
+  local emoteMsgB = actorB .. " casually tosses [" .. "Worn Troll Dice" .. "]."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgB, actorB, 90002, "Player-TEST2")
+  assertEq("pending_not_opened_before_name", pendingByActorName(actorB) == nil, true, failures)
+
+  processPendingUnknownTosses()
+  assertEq("pending_still_nil_before_gate", pendingByActorName(actorB) == nil, true, failures)
+
+  processPendingUnknownTosses()
+  assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback", pendingByActorName(actorB) ~= nil, true, failures)
   -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
@@ -1914,6 +2001,11 @@ function DiceTracker.RunSelfTest()
   local strayMsg = string.format(_G.RANDOM_ROLL_RESULT, "SomeoneElse", 2, 1, 6)
   onSystemEvent(strayMsg, 90005)
   assertEq("drop_increment_roll_no_pending", DiceTrackerDB.drop.total, beforeDrops + 1, failures)
+
+  -- 3a) Non-roll system messages should be ignored (no drop)
+  local beforeNonRoll = DiceTrackerDB.drop.total
+  onSystemEvent("You have unlearned a spell.", 900050)
+  assertEq("non_roll_no_drop", DiceTrackerDB.drop.total, beforeNonRoll, failures)
 
   -- 3b) Ambiguous baseName pairing must drop and not consume any pending sessions
   openPendingToss("Player-DUPA", "Dup-RealmA", 90006, "Player-DUPA")
@@ -1986,6 +2078,7 @@ function DiceTracker.RunSelfTest()
   RT.itemName = backupRuntime.itemName
   RT.selfTesting = backupRuntime.selfTesting
   RT.selfTestTargetKey = backupRuntime.selfTestTargetKey
+  RT.pendingUnknownTosses = backupRuntime.pendingUnknownTosses
 
   RT.lastDebug.selfTest = RT.lastDebug.selfTest or {}
   RT.lastDebug.selfTest.ran = true
