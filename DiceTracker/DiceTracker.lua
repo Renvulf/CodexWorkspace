@@ -24,7 +24,7 @@ local FAIR_ANCHOR = {
   high = 15/36,
 }
 
-local SCHEMA_VERSION = 5
+local SCHEMA_VERSION = 6
 
 local RT
 
@@ -113,7 +113,10 @@ local function cleanMessage(s)
   return s
 end
 
-local function selfActorKey()
+local function selfActorName()
+  if RT.selfTesting and RT.selfTestSelfName then
+    return RT.selfTestSelfName
+  end
   if UnitFullName then
     local n, r = UnitFullName("player")
     if n and r and r ~= "" then return n .. "-" .. r end
@@ -122,12 +125,48 @@ local function selfActorKey()
   return UnitName and UnitName("player") or "?"
 end
 
+local function selfActorKey()
+  if RT.selfTesting and RT.selfTestSelfGuid then
+    return RT.selfTestSelfGuid
+  end
+  if UnitGUID then
+    local guid = UnitGUID("player")
+    if guid and guid ~= "" then return guid end
+  end
+  return selfActorName()
+end
+
+local function stableActorKeyFromNameGuid(name, guid)
+  if type(guid) == "string" and guid ~= "" then
+    return guid
+  end
+  local selfName = selfActorName()
+  if name and selfName and name == selfName and UnitGUID then
+    local selfGuid = UnitGUID("player")
+    if selfGuid and selfGuid ~= "" then
+      return selfGuid
+    end
+  end
+  return name
+end
+
+local function isGuidKey(key)
+  if type(key) ~= "string" then return false end
+  return key:match("^Player%-%x+%-%x+") ~= nil
+end
+
 local function targetActorKey()
   if RT.selfTesting and RT.selfTestTargetKey then
     return RT.selfTestTargetKey
   end
   if not UnitExists or not UnitIsPlayer then return nil end
   if not UnitExists("target") or not UnitIsPlayer("target") then return nil end
+  if UnitGUID then
+    local guid = UnitGUID("target")
+    if guid and guid ~= "" then
+      return guid
+    end
+  end
   if UnitFullName then
     local n, r = UnitFullName("target")
     if n and n ~= "" then
@@ -154,29 +193,29 @@ local function baseName(actor)
   return actor:match("^([^%-]+)") or actor
 end
 
-local function canonicalizeActorKey(actorKey)
-  if type(actorKey) ~= "string" then return nil end
-  actorKey = normalizeWhitespace(stripColorAndTextures(actorKey))
-  if actorKey == "" then return nil end
+local function canonicalizeActorName(actorName)
+  if type(actorName) ~= "string" then return nil end
+  actorName = normalizeWhitespace(stripColorAndTextures(actorName))
+  if actorName == "" then return nil end
 
-  -- Map localized "You" to the local player
+  -- Map localized "You" to the local player name
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
-  if actorKey:lower() == tostring(youWord):lower() or actorKey:lower() == "you" then
-    return selfActorKey()
+  if actorName:lower() == tostring(youWord):lower() or actorName:lower() == "you" then
+    return selfActorName()
   end
 
   -- Map local player's unqualified name to full name-realm when available
   local selfBase = UnitName and UnitName("player") or nil
-  local selfFull = selfActorKey()
-  if type(selfBase) == "string" and selfBase ~= "" and actorKey == selfBase then
+  local selfFull = selfActorName()
+  if type(selfBase) == "string" and selfBase ~= "" and actorName == selfBase then
     return selfFull
   end
   local bn = baseName(selfFull)
-  if bn and actorKey == bn then
+  if bn and actorName == bn then
     return selfFull
   end
 
-  return actorKey
+  return actorName
 end
 
 local function bucketFromSum(sum)
@@ -379,6 +418,7 @@ local function newEmptyModel()
 
     meta = {
       lastSeen = 0,
+      displayName = nil,
     }
   }
 
@@ -471,6 +511,9 @@ local function ensureModelTables(m)
   m.loss = m.loss or {}
   m.meta = m.meta or {}
   m.meta.lastSeen = tonumber(m.meta.lastSeen) or 0
+  if m.meta.displayName ~= nil and type(m.meta.displayName) ~= "string" then
+    m.meta.displayName = nil
+  end
 
   return m
 end
@@ -770,7 +813,7 @@ local function parseRollLine(msg)
     local roll, minV, maxV = msg:match(rollPatternSelf)
     if roll and minV and maxV then
       roll, minV, maxV = tonumber(roll), tonumber(minV), tonumber(maxV)
-      local who = selfActorKey()
+      local who = selfActorName()
       return who, roll, minV, maxV
     end
   end
@@ -1022,6 +1065,7 @@ local function ensureActorModel(actorKey)
   return m
 end
 
+
 local function mergeModels(dst, src)
   if type(dst) ~= "table" or type(src) ~= "table" then return end
   dst = ensureModelTables(dst)
@@ -1056,14 +1100,38 @@ local function mergeModels(dst, src)
   end
 end
 
+local function ensureActorModelWithDisplay(actorKey, displayName)
+  if not actorKey or actorKey == "" then return nil end
+  local map = DiceTrackerDB and DiceTrackerDB.actors and DiceTrackerDB.actors.map
+  if type(map) ~= "table" then
+    ensureActorModel(actorKey)
+    map = DiceTrackerDB.actors.map
+  end
+
+  if displayName and displayName ~= "" and map[displayName] and not map[actorKey] then
+    map[actorKey] = ensureModelTables(map[displayName])
+    map[displayName] = nil
+  elseif displayName and displayName ~= "" and map[displayName] and map[actorKey] then
+    mergeModels(map[actorKey], map[displayName])
+    map[displayName] = nil
+  end
+
+  local m = ensureActorModel(actorKey)
+  if m and displayName and displayName ~= "" then
+    m.meta.displayName = displayName
+  end
+  return m
+end
+
 local function fixLocalActorKey(attempt)
   attempt = attempt or 0
   if attempt > 8 then return end
   if not DiceTrackerDB or not DiceTrackerDB.actors or not DiceTrackerDB.actors.map then return end
 
-  local selfFull = selfActorKey()
+  local selfName = selfActorName()
+  local selfGuid = selfActorKey()
   local selfBase = UnitName and UnitName("player") or nil
-  if type(selfFull) ~= "string" or selfFull == "" or type(selfBase) ~= "string" or selfBase == "" then
+  if type(selfName) ~= "string" or selfName == "" or type(selfBase) ~= "string" or selfBase == "" then
     if C_Timer and C_Timer.After then
       C_Timer.After(1.0, function() fixLocalActorKey(attempt + 1) end)
     end
@@ -1071,7 +1139,7 @@ local function fixLocalActorKey(attempt)
   end
 
   -- Wait until realm is available (name-realm); otherwise we might canonicalize too early.
-  if not selfFull:find("-", 1, true) then
+  if not selfName:find("-", 1, true) then
     if C_Timer and C_Timer.After then
       C_Timer.After(1.0, function() fixLocalActorKey(attempt + 1) end)
     end
@@ -1080,23 +1148,41 @@ local function fixLocalActorKey(attempt)
 
   local map = DiceTrackerDB.actors.map
   local mBase = map[selfBase]
-  local mFull = map[selfFull]
+  local mName = map[selfName]
+  local mGuid = map[selfGuid]
 
-  if mBase and not mFull then
-    map[selfFull] = ensureModelTables(mBase)
+  if mBase and not mName then
+    map[selfName] = ensureModelTables(mBase)
     map[selfBase] = nil
-  elseif mBase and mFull then
-    mFull = ensureModelTables(mFull)
-    mergeModels(mFull, mBase)
-    map[selfFull] = mFull
+  elseif mBase and mName then
+    mName = ensureModelTables(mName)
+    mergeModels(mName, mBase)
+    map[selfName] = mName
     map[selfBase] = nil
+  end
+
+  if selfGuid and selfGuid ~= "" then
+    if mName and not mGuid then
+      map[selfGuid] = ensureModelTables(mName)
+      map[selfName] = nil
+    elseif mName and mGuid then
+      mGuid = ensureModelTables(mGuid)
+      mergeModels(mGuid, mName)
+      map[selfGuid] = mGuid
+      map[selfName] = nil
+    end
+    if map[selfGuid] and type(map[selfGuid].meta) == "table" then
+      map[selfGuid].meta.displayName = selfName
+    end
+  elseif mName and type(mName.meta) == "table" then
+    mName.meta.displayName = selfName
   end
 
   -- If the user had selected the base name explicitly, preserve intent by updating to full key.
   if DiceTrackerDB.settings and type(DiceTrackerDB.settings.target) == "table"
       and DiceTrackerDB.settings.target.mode == "actor"
       and DiceTrackerDB.settings.target.actor == selfBase then
-    DiceTrackerDB.settings.target.actor = selfFull
+    DiceTrackerDB.settings.target.actor = selfGuid or selfName
   end
 end
 
@@ -1255,7 +1341,7 @@ end
 -- -----------------------------
 -- Finalization (score-before-learn)
 -- -----------------------------
-local function finalizeSample(actorKey, die1, die2)
+local function finalizeSample(actorKey, actorName, die1, die2)
   local sum = die1 + die2
   local bucket = bucketFromSum(sum)
   if not bucket then
@@ -1267,7 +1353,7 @@ local function finalizeSample(actorKey, die1, die2)
   if not db then return end
 
   local globalModel = db.global
-  local actorModel = ensureActorModel(actorKey)
+  local actorModel = ensureActorModelWithDisplay(actorKey, actorName)
 
   -- Compute predictions pre-learn
   local globalP, globalMeta = computeModelDisplayedPrediction(globalModel)
@@ -1297,6 +1383,7 @@ local function finalizeSample(actorKey, die1, die2)
   db.lastSample = {
     when = time and time() or 0,
     actor = actorKey,
+    actorName = actorName,
     die1 = die1,
     die2 = die2,
     sum = sum,
@@ -1381,7 +1468,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
     return
   end
 
-  actorName = canonicalizeActorKey(actorName)
+  actorName = canonicalizeActorName(actorName)
   if not isValidActorName(actorName) then
     bumpDrop("toss_actor_ambiguous")
     return
@@ -1400,7 +1487,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
     end
   end
 
-  local actorKeyPrimary = (type(guid) == "string" and guid ~= "") and guid or actorName
+  local actorKeyPrimary = stableActorKeyFromNameGuid(actorName, guid)
 
   RT.lastConfirmedActor = actorName
   RT.lastConfirmedTime = safeNow()
@@ -1444,7 +1531,7 @@ local function onSystemEvent(msg, lineID)
   end
 
   who = normalizeWhitespace(stripColorAndTextures(who))
-  who = canonicalizeActorKey(who)
+  who = canonicalizeActorName(who)
   if not isValidActorName(who) then
     bumpDrop("roll_actor_ambiguous")
     return
@@ -1473,7 +1560,7 @@ local function onSystemEvent(msg, lineID)
 
   if #rolls == 2 then
     RT.pending[key] = nil
-    finalizeSample(entry.actorName or key, rolls[1], rolls[2])
+    finalizeSample(entry.actorKeyPrimary or entry.actorName or key, entry.actorName or entry.actorKeyPrimary or key, rolls[1], rolls[2])
   elseif #rolls > 2 then
     RT.pending[key] = nil
     bumpDrop("pending_overflow")
@@ -1528,6 +1615,31 @@ local function computeEffectiveTarget()
   return "GLOBAL", "auto-global"
 end
 
+local function displayNameForActorKey(actorKey)
+  if not actorKey or actorKey == "" then return "?" end
+  if actorKey == "GLOBAL" then return "Global" end
+  if actorKey == selfActorKey() then
+    return selfActorName()
+  end
+  if UnitGUID and UnitFullName and UnitExists and UnitIsPlayer then
+    if UnitExists("target") and UnitIsPlayer("target") and UnitGUID("target") == actorKey then
+      local tn, tr = UnitFullName("target")
+      if tn and tn ~= "" then
+        if tr and tr ~= "" then
+          return tn .. "-" .. tr
+        end
+        return tn
+      end
+    end
+  end
+  if not isGuidKey(actorKey) then return actorKey end
+  local m = DiceTrackerDB and DiceTrackerDB.actors and DiceTrackerDB.actors.map and DiceTrackerDB.actors.map[actorKey]
+  if m and m.meta and type(m.meta.displayName) == "string" and m.meta.displayName ~= "" then
+    return m.meta.displayName
+  end
+  return actorKey
+end
+
 local function selectionText()
   local db = DiceTrackerDB
   if not db then return "Auto" end
@@ -1536,7 +1648,7 @@ local function selectionText()
   if mode == "auto" then return "Auto" end
   if mode == "me" then return "Me" end
   if mode == "global" then return "Global" end
-  if mode == "actor" and t.actor then return t.actor end
+  if mode == "actor" and t.actor then return displayNameForActorKey(t.actor) end
   return "Auto"
 end
 
@@ -1544,13 +1656,19 @@ local function trackedActors()
   local out = {}
   local map = DiceTrackerDB and DiceTrackerDB.actors and DiceTrackerDB.actors.map
   if type(map) == "table" then
-    for k in pairs(map) do
+    for k, model in pairs(map) do
       if k and k ~= "" then
-        out[#out + 1] = k
+        local label = displayNameForActorKey(k)
+        if model and model.meta and type(model.meta.displayName) == "string" and model.meta.displayName ~= "" then
+          label = model.meta.displayName
+        end
+        out[#out + 1] = { key = k, label = label }
       end
     end
   end
-  table.sort(out)
+  table.sort(out, function(a, b)
+    return tostring(a.label) < tostring(b.label)
+  end)
   return out
 end
 
@@ -1593,7 +1711,7 @@ local function dropdownInit(self, level)
     info.disabled = false
     info.notCheckable = false
     for _, a in ipairs(actors) do
-      info.text, info.value = a, a
+      info.text, info.value = a.label, a.key
       UIDropDownMenu_AddButton(info, level)
     end
   end
@@ -1696,7 +1814,7 @@ local function formatDebugOverlay(targetKey, combinedMeta, combinedProbs)
 
   if ls then
     line[#line + 1] = string.format("Last: %s  %d+%d=%d  %s",
-      tostring(ls.actor or "?"),
+      tostring(ls.actorName or displayNameForActorKey(ls.actor) or "?"),
       tonumber(ls.die1) or 0,
       tonumber(ls.die2) or 0,
       tonumber(ls.sum) or 0,
@@ -1809,7 +1927,7 @@ function DiceTracker.UpdateUI()
   if not f then return end
 
   local targetKey, mode = computeEffectiveTarget()
-  local displayTarget = (targetKey == "GLOBAL") and "Global" or targetKey
+  local displayTarget = displayNameForActorKey(targetKey)
 
   local probs, meta = computeActorCombinedPrediction(targetKey)
   probs = clampAndRenorm(probs)
@@ -1902,11 +2020,15 @@ function DiceTracker.RunSelfTest()
     itemName = RT.itemName,
     selfTesting = RT.selfTesting,
     selfTestTargetKey = RT.selfTestTargetKey,
+    selfTestSelfName = RT.selfTestSelfName,
+    selfTestSelfGuid = RT.selfTestSelfGuid,
     pendingUnknownTosses = deepCopy(RT.pendingUnknownTosses),
   }
 
   -- Isolate runtime + DB
   RT.selfTesting = true
+  RT.selfTestSelfName = "SelfTest-Me"
+  RT.selfTestSelfGuid = "Player-SELFTEST-0001"
   RT.pending = {}
   RT.lastConfirmedActor = nil
   RT.lastConfirmedTime = 0
@@ -1917,13 +2039,13 @@ function DiceTracker.RunSelfTest()
 
   DiceTrackerDB = migrateIfNeeded({})
   _G.DiceTrackerDB = DiceTrackerDB
-  ensureActorModel(selfActorKey())
+  ensureActorModelWithDisplay(selfActorKey(), selfActorName())
 
   -- 0) Auto-target behavior (target player vs global)
   DiceTrackerDB.settings.target.mode = "auto"
-  RT.selfTestTargetKey = "SelfTest-Target"
+  RT.selfTestTargetKey = "Player-SELFTESTTARGET-0002"
   local autoKey = computeEffectiveTarget()
-  assertEq("auto_target_key", autoKey, "SelfTest-Target", failures)
+  assertEq("auto_target_key", autoKey, "Player-SELFTESTTARGET-0002", failures)
   RT.selfTestTargetKey = nil
   local autoGlobalKey = computeEffectiveTarget()
   assertEq("auto_target_global", autoGlobalKey, "GLOBAL", failures)
@@ -1955,21 +2077,22 @@ function DiceTracker.RunSelfTest()
   -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
+  local selfName = selfActorName()
   local emoteMsgYou = youWord .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgYou, nil, 900021, "Player-SELFTESTYOU")
-  assertEq("pending_opened_you_no_sender", pendingByActorName(selfKey) ~= nil, true, failures)
+  assertEq("pending_opened_you_no_sender", pendingByActorName(selfName) ~= nil, true, failures)
 
   -- Feed one localized self roll line (if we can format it) and verify pairing sticks to selfKey without finalizing.
   if type(_G.RANDOM_ROLL_RESULT_SELF) == "string" then
     local okFmtY, selfMsgY = pcall(string.format, _G.RANDOM_ROLL_RESULT_SELF, 2, 1, 6)
     if okFmtY and type(selfMsgY) == "string" then
       onSystemEvent(selfMsgY, 900022)
-      local pendingSelf = pendingByActorName(selfKey)
+      local pendingSelf = pendingByActorName(selfName)
       assertEq("pending_one_die_you", (pendingSelf and pendingSelf.rolls and #pendingSelf.rolls == 1), true, failures)
     end
   end
   for k, entry in pairs(RT.pending) do
-    if entry and entry.actorName == selfKey then
+    if entry and entry.actorName == selfName then
       RT.pending[k] = nil
     end
   end
@@ -2005,7 +2128,7 @@ function DiceTracker.RunSelfTest()
     local okFmt, selfMsg = pcall(string.format, _G.RANDOM_ROLL_RESULT_SELF, 3, 1, 6)
     if okFmt and type(selfMsg) == "string" then
       local whoS, rollS, minS, maxS = parseRollLine(selfMsg)
-      assertEq("self_roll_actor", whoS, selfActorKey(), failures)
+      assertEq("self_roll_actor", whoS, selfActorName(), failures)
       assertEq("self_roll_value", rollS, 3, failures)
       assertEq("self_roll_range", (minS == 1 and maxS == 6), true, failures)
     end
@@ -2014,14 +2137,15 @@ function DiceTracker.RunSelfTest()
   -- 2d) Fallback "You rolls" parsing should map to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey2 = selfActorKey()
-  openPendingToss("Player-SELFROLL", selfKey2, 900023, "Player-SELFROLL")
-  local beforeYouFallback = pendingByActorName(selfKey2)
+  local selfName2 = selfActorName()
+  openPendingToss("Player-SELFROLL", selfName2, 900023, "Player-SELFROLL")
+  local beforeYouFallback = pendingByActorName(selfName2)
   assertEq("pending_self_before_you_fallback", beforeYouFallback ~= nil, true, failures)
   onSystemEvent(youWord .. " rolls 4 (1-6)", 900024)
-  local pendingSelfAfter = pendingByActorName(selfKey2)
+  local pendingSelfAfter = pendingByActorName(selfName2)
   assertEq("pending_self_one_die_fallback", (pendingSelfAfter and pendingSelfAfter.rolls and #pendingSelfAfter.rolls == 1), true, failures)
   for k, entry in pairs(RT.pending) do
-    if entry and entry.actorName == selfKey2 then
+    if entry and entry.actorName == selfName2 then
       RT.pending[k] = nil
     end
   end
@@ -2128,6 +2252,8 @@ function DiceTracker.RunSelfTest()
   RT.itemName = backupRuntime.itemName
   RT.selfTesting = backupRuntime.selfTesting
   RT.selfTestTargetKey = backupRuntime.selfTestTargetKey
+  RT.selfTestSelfName = backupRuntime.selfTestSelfName
+  RT.selfTestSelfGuid = backupRuntime.selfTestSelfGuid
   RT.pendingUnknownTosses = backupRuntime.pendingUnknownTosses
 
   RT.lastDebug.selfTest = RT.lastDebug.selfTest or {}
@@ -2213,7 +2339,7 @@ StaticPopupDialogs["DICETRACKER_RESET_CONFIRM"] = {
     DiceTrackerDB = fresh
     _G.DiceTrackerDB = DiceTrackerDB
 
-    ensureActorModel(selfActorKey())
+    ensureActorModelWithDisplay(selfActorKey(), selfActorName())
     DiceTracker.UpdateUI()
   end,
   timeout = 0,
@@ -2240,7 +2366,7 @@ f:SetScript("OnEvent", function(_, event, ...)
     DiceTrackerDB = migrateIfNeeded(_G.DiceTrackerDB)
     _G.DiceTrackerDB = DiceTrackerDB
 
-    ensureActorModel(selfActorKey())
+    ensureActorModelWithDisplay(selfActorKey(), selfActorName())
     fixLocalActorKey(0)
     refreshItemName(0)
 
