@@ -1274,19 +1274,6 @@ local function onTossEvent(event, msg, sender, lineID, guid)
     return
   end
 
-  -- Dedupe
-  if lineID and dedupeLineID(lineID) then
-    bumpDrop("dedupe_lineid")
-    return
-  end
-  if not lineID then
-    local key = tostring(event) .. "|" .. tostring(sender) .. "|" .. tostring(msg)
-    if dedupeTTL(key) then
-      bumpDrop("dedupe_ttl")
-      return
-    end
-  end
-
   if not isConfirmedTossMessage(msg) then
     bumpDrop("toss_not_confirmed")
     return
@@ -1314,6 +1301,19 @@ local function onTossEvent(event, msg, sender, lineID, guid)
   if not isValidActorName(actorName) then
     bumpDrop("toss_actor_ambiguous")
     return
+  end
+
+  -- Dedupe
+  if lineID and dedupeLineID(lineID) then
+    bumpDrop("dedupe_lineid")
+    return
+  end
+  if not lineID then
+    local key = tostring(event) .. "|" .. tostring(actorName) .. "|" .. tostring(cleanedMsg)
+    if dedupeTTL(key) then
+      bumpDrop("dedupe_ttl")
+      return
+    end
   end
 
   local actorKeyPrimary = (type(guid) == "string" and guid ~= "") and guid or actorName
