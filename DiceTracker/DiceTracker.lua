@@ -1411,8 +1411,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
     if name and name ~= "" then
       RT.itemName = name
     else
-      local hasBracketedItem = cleanedMsg:find("%[[^%]]+%]") ~= nil
-      if allowQueue and hasBracketedItem then
+      if allowQueue and cleanedMsg ~= "" then
         queueUnknownToss(event, msg, sender, lineID, guid)
       end
       if (not RT.selfTesting) and C_Timer and C_Timer.After then
@@ -2059,6 +2058,21 @@ function DiceTracker.RunSelfTest()
   processPendingUnknownTosses()
   assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback", pendingByActorName(actorB) ~= nil, true, failures)
+
+  -- 1b2) Toss confirmation via item name fallback without brackets (queued while name unavailable)
+  RT.itemName = nil
+  RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
+  local actorC = "SelfTest-C"
+  local emoteMsgC = actorC .. " casually tosses Worn Troll Dice."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC, actorC, 900025, "Player-TEST3")
+  assertEq("pending_not_opened_before_name_unbracketed", pendingByActorName(actorC) == nil, true, failures)
+
+  processPendingUnknownTosses()
+  assertEq("pending_still_nil_before_gate_unbracketed", pendingByActorName(actorC) == nil, true, failures)
+
+  processPendingUnknownTosses()
+  assertEq("item_name_set_after_gate_unbracketed", RT.itemName, "Worn Troll Dice", failures)
+  assertEq("pending_opened_name_fallback_unbracketed", pendingByActorName(actorC) ~= nil, true, failures)
   -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
@@ -2084,6 +2098,11 @@ function DiceTracker.RunSelfTest()
 
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorB then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorC then
       RT.pending[k] = nil
     end
   end
