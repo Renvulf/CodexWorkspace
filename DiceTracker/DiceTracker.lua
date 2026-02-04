@@ -1304,6 +1304,21 @@ local function openPendingToss(actorKeyPrimary, actorName, lineID, guid)
     RT.pending[actorKeyPrimary] = nil
     bumpDrop("pending_overwritten")
   end
+  -- If the same actor (by canonical name) already has a pending session under a different key,
+  -- replace it conservatively to avoid multiple concurrent sessions for one actor.
+  local removeKeys = nil
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorName and k ~= actorKeyPrimary then
+      removeKeys = removeKeys or {}
+      removeKeys[#removeKeys + 1] = k
+    end
+  end
+  if removeKeys then
+    for _, k in ipairs(removeKeys) do
+      RT.pending[k] = nil
+      bumpDrop("pending_overwritten")
+    end
+  end
 
   local token = now + math.random() -- token to avoid stale timer clears
   RT.pending[actorKeyPrimary] = {
@@ -2090,6 +2105,17 @@ function DiceTracker.RunSelfTest()
       assertEq("pending_one_die_you", (pendingSelf and pendingSelf.rolls and #pendingSelf.rolls == 1), true, failures)
     end
   end
+
+  -- 1d) Duplicate toss for same actor name under a different key should replace pending session.
+  local actorD = "SelfTest-D"
+  local emoteMsgD = actorD .. " casually tosses " .. itemLink .. "."
+  local beforeOverwrite = DiceTrackerDB.drop.total
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgD, actorD, 900026, "Player-TESTD")
+  assertEq("pending_opened_first_key", pendingByActorName(actorD) ~= nil, true, failures)
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgD, actorD, 900027, nil)
+  assertEq("pending_replaced_same_actor", pendingByActorName(actorD) ~= nil, true, failures)
+  assertEq("pending_replaced_drop_increment", DiceTrackerDB.drop.total, beforeOverwrite + 1, failures)
+
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == selfName then
       RT.pending[k] = nil
@@ -2103,6 +2129,11 @@ function DiceTracker.RunSelfTest()
   end
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorC then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorD then
       RT.pending[k] = nil
     end
   end
