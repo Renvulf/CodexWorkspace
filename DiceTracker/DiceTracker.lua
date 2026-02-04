@@ -1810,14 +1810,23 @@ local function formatDebugOverlay(targetKey, combinedMeta, combinedProbs)
 
   local ls = db.lastSample
   local line = {}
+  local function formatSampleTime(ts)
+    ts = tonumber(ts) or 0
+    if ts <= 0 then return "-" end
+    if date then
+      return date("%Y-%m-%d %H:%M:%S", ts)
+    end
+    return tostring(ts)
+  end
 
   if ls then
-    line[#line + 1] = string.format("Last: %s  %d+%d=%d  %s",
+    line[#line + 1] = string.format("Last: %s  %d+%d=%d  %s  %s",
       tostring(ls.actorName or displayNameForActorKey(ls.actor) or "?"),
       tonumber(ls.die1) or 0,
       tonumber(ls.die2) or 0,
       tonumber(ls.sum) or 0,
-      BUCKET_LABEL[ls.bucket] or tostring(ls.bucket)
+      BUCKET_LABEL[ls.bucket] or tostring(ls.bucket),
+      formatSampleTime(ls.when)
     )
   else
     line[#line + 1] = "Last: -"
