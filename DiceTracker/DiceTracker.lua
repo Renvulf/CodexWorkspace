@@ -56,8 +56,8 @@ local ACTOR_ADV1  = 0.050
 local MAX_ACTORS = 50  -- LRU bounded
 local AUTO_WINDOW = 15 -- seconds after a confirmed toss to auto-target that actor
 
--- Pending pairing window
-local MAX_WAIT_SECONDS = 8
+-- Pending pairing window (conservative TTL)
+local MAX_WAIT_SECONDS = 5
 
 -- Dedupe
 local LINEID_LRU_MAX = 256
