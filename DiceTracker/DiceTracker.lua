@@ -1473,20 +1473,20 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
     return
   end
 
+  local actorKeyPrimary = stableActorKeyFromNameGuid(actorName, guid)
+
   -- Dedupe
   if lineID and dedupeLineID(lineID) then
     bumpDrop("dedupe_lineid")
     return
   end
   if not lineID then
-    local key = tostring(event) .. "|" .. tostring(actorName) .. "|" .. tostring(cleanedMsg)
+    local key = tostring(event) .. "|" .. tostring(actorKeyPrimary or actorName) .. "|" .. tostring(cleanedMsg)
     if dedupeTTL(key) then
       bumpDrop("dedupe_ttl")
       return
     end
   end
-
-  local actorKeyPrimary = stableActorKeyFromNameGuid(actorName, guid)
 
   RT.lastConfirmedActor = actorName
   RT.lastConfirmedTime = safeNow()
