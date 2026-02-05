@@ -2426,12 +2426,9 @@ StaticPopupDialogs["DICETRACKER_RESET_CONFIRM"] = {
     -- Preserve settings + UI position; wipe only learned statistics.
     local keepSettings = deepCopy(DiceTrackerDB.settings or {})
     local keepUI = deepCopy(DiceTrackerDB.ui or {})
-    local keepDrop = deepCopy(DiceTrackerDB.drop or { total = 0, reasons = {} })
-
     local fresh = newDB()
     fresh.settings = keepSettings
     fresh.ui = keepUI
-    fresh.drop = keepDrop
     -- Keep schema
     DiceTrackerDB = fresh
     _G.DiceTrackerDB = DiceTrackerDB
