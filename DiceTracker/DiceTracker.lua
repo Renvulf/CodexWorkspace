@@ -1524,11 +1524,6 @@ local function onSystemEvent(msg, lineID)
     end
   end
 
-  if minV ~= 1 or maxV ~= 6 or roll < 1 or roll > 6 or roll ~= math.floor(roll) then
-    bumpDrop("roll_not_d6")
-    return
-  end
-
   who = normalizeWhitespace(stripColorAndTextures(who))
   who = canonicalizeActorName(who)
   if not isValidActorName(who) then
@@ -1537,6 +1532,16 @@ local function onSystemEvent(msg, lineID)
   end
 
   local key = resolvePendingKey(who)
+
+  if minV ~= 1 or maxV ~= 6 or roll < 1 or roll > 6 or roll ~= math.floor(roll) then
+    if key then
+      RT.pending[key] = nil
+      bumpDrop("pending_invalid_range")
+    else
+      bumpDrop("roll_not_d6")
+    end
+    return
+  end
   if not key then
     bumpDrop("roll_no_pending")
     return
@@ -2293,6 +2298,7 @@ function DiceTracker.RunSelfTest()
   local beforeRange = DiceTrackerDB.drop.total
   onSystemEvent("RangeActor rolls 6 (1-20)", 90018)
   assertEq("wrong_range_drop", DiceTrackerDB.drop.total, beforeRange + 1, failures)
+  assertEq("wrong_range_pending_cleared", pendingByActorName("RangeActor") == nil, true, failures)
 
   -- 4) Probability normalization / rounding to 100.0
   local perc = roundedPercentsTo100({ low = 0.333333, seven = 0.333333, high = 0.333334 })
