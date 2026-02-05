@@ -2288,6 +2288,13 @@ function DiceTracker.RunSelfTest()
   local sum = perc.low + perc.seven + perc.high
   assertNear("rounded_sum_100", sum, 100.0, 0.0001, failures)
 
+  -- 4b) Clamp + renormalize probabilities
+  local clamped = clampAndRenorm({ low = 0, seven = 1, high = 0 })
+  local clampSum = (clamped.low or 0) + (clamped.seven or 0) + (clamped.high or 0)
+  assertNear("clamp_renorm_sum_1", clampSum, 1.0, 1e-6, failures)
+  assertEq("clamp_low_min", (clamped.low or 0) >= EPS, true, failures)
+  assertEq("clamp_high_min", (clamped.high or 0) >= EPS, true, failures)
+
   -- 5) Prequential score-before-learn sanity (anchor + E1 on the first sample)
   local expectedAnchorNLL = -math.log(FAIR_ANCHOR.low)
   assertNear("nll_anchor_low", DiceTrackerDB.global.loss.anchor, expectedAnchorNLL, 1e-6, failures)
