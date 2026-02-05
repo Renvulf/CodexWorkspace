@@ -351,10 +351,10 @@ local function dedupeTTL(key)
   -- prune occasionally (bounded)
   local count = 0
   for k, exp in pairs(RT.ttlSeen) do
-    count = count + 1
     if exp <= now then
       RT.ttlSeen[k] = nil
-      count = count - 1
+    else
+      count = count + 1
     end
   end
   if count > TTL_DEDUPE_MAX then
