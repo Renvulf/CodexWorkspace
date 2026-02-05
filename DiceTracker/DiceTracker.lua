@@ -743,7 +743,7 @@ local function isConfirmedTossMessage(msg)
   local itemName = RT.itemName
   if itemName and itemName ~= "" then
     local cleaned = cleanMessage(msg)
-    if cleaned:find(itemName, 1, true) then
+    if cleaned:lower():find(itemName:lower(), 1, true) then
       return true
     end
   end
@@ -1438,7 +1438,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
 
   local mentionsItemName = false
   if RT.itemName and RT.itemName ~= "" then
-    mentionsItemName = cleanedMsg:find(RT.itemName, 1, true) ~= nil
+    mentionsItemName = cleanedMsg:lower():find(RT.itemName:lower(), 1, true) ~= nil
   end
   if not hasAnyItemLink and not mentionsItemName then
     return
@@ -2097,6 +2097,12 @@ function DiceTracker.RunSelfTest()
   processPendingUnknownTosses()
   assertEq("item_name_set_after_gate_unbracketed", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback_unbracketed", pendingByActorName(actorC) ~= nil, true, failures)
+
+  -- 1b3) Item name fallback should be case-insensitive in cleaned messages.
+  local actorC2 = "SelfTest-C2"
+  local emoteMsgC2 = actorC2 .. " casually tosses worn troll dice."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2, actorC2, 9000261, "Player-TEST3B")
+  assertEq("pending_opened_name_fallback_case_insensitive", pendingByActorName(actorC2) ~= nil, true, failures)
   -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
@@ -2138,6 +2144,11 @@ function DiceTracker.RunSelfTest()
   end
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorC then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorC2 then
       RT.pending[k] = nil
     end
   end
