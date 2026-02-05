@@ -1218,7 +1218,18 @@ local function computeActorCombinedPrediction(actorKey)
     }
   end
 
-  local actorModel = ensureActorModel(actorKey)
+  local map = DiceTrackerDB and DiceTrackerDB.actors and DiceTrackerDB.actors.map
+  local actorModel = (type(map) == "table") and map[actorKey] or nil
+  if not actorModel then
+    return globalP, {
+      mode = "global-unseen",
+      global = globalMeta,
+      actor = nil,
+      combinedGate = 0,
+    }
+  end
+
+  actorModel = ensureModelTables(actorModel)
   local actorP, actorMeta = computeModelDisplayedPrediction(actorModel)
 
   -- Compare on actor stream using stored EWMA losses inside actorModel
@@ -2053,6 +2064,12 @@ function DiceTracker.RunSelfTest()
   DiceTrackerDB = migrateIfNeeded({})
   _G.DiceTrackerDB = DiceTrackerDB
   ensureActorModelWithDisplay(selfActorKey(), selfActorName())
+
+  -- 0b) Unseen actor should not allocate a model (UI should fall back to global)
+  local unseenKey = "Player-UNSEEN-0003"
+  local _, unseenMeta = computeActorCombinedPrediction(unseenKey)
+  assertEq("unseen_actor_no_create", (DiceTrackerDB.actors.map and DiceTrackerDB.actors.map[unseenKey]) == nil, true, failures)
+  assertEq("unseen_actor_mode", unseenMeta and unseenMeta.mode or "?", "global-unseen", failures)
 
   -- 0) Auto-target behavior (target player vs global)
   DiceTrackerDB.settings.target.mode = "auto"
