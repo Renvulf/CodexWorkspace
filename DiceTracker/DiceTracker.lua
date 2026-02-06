@@ -1458,6 +1458,11 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   local hasAnyItemLink = msg:find("|Hitem:", 1, true) ~= nil
   local hasItemLinkForItem = msg:find("|Hitem:" .. ITEM_ID .. ":", 1, true) ~= nil
 
+  -- If another item link is present, ignore it (don't queue unknown tosses).
+  if hasAnyItemLink and not hasItemLinkForItem then
+    return
+  end
+
   -- Ensure itemName is populated if possible (helps when the toss line includes only the localized item name).
   if (not hasItemLinkForItem) and (not RT.itemName or RT.itemName == "") then
     local name = getItemNameNow()
@@ -2077,6 +2082,11 @@ function DiceTracker.RunSelfTest()
     end
     return nil
   end
+  local function pendingUnknownCount()
+    local count = 0
+    for _ in pairs(RT.pendingUnknownTosses) do count = count + 1 end
+    return count
+  end
 
   -- Snapshot state so the self-test never contaminates learned data.
   local backupDB = deepCopy(DiceTrackerDB)
@@ -2156,6 +2166,12 @@ function DiceTracker.RunSelfTest()
   onTossEvent("CHAT_MSG_TEXT_EMOTE", otherMsg, actor, 9000101, "Player-TEST1B")
   assertEq("pending_unchanged_other_item", pendingByActorName(actor) ~= nil, true, failures)
   assertEq("no_drop_other_item", DiceTrackerDB.drop.total, beforeOtherDrop, failures)
+  local keepNameOther = RT.itemName
+  RT.itemName = nil
+  local beforeOtherQueue = pendingUnknownCount()
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", otherMsg, actor, 9000102, "Player-TEST1C")
+  assertEq("other_item_no_queue", pendingUnknownCount(), beforeOtherQueue, failures)
+  RT.itemName = keepNameOther
 
   -- 1b) Empty sender should parse actor name from the message.
   local actorEmpty = "SelfTest-Empty"
