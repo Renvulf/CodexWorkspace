@@ -285,8 +285,8 @@ local function roundedPercentsTo100(p)
   if diff ~= 0 then
     -- Sort buckets by fractional part (descending if we need to add, ascending if subtract).
     -- Tie-break deterministically by fixed bucket order to keep rounding stable.
-    local order = { "low", "seven", "high" }
-    local orderIndex = { low = 1, seven = 2, high = 3 }
+    local order = { "low", "high", "seven" }
+    local orderIndex = { low = 1, high = 2, seven = 3 }
     table.sort(order, function(a, b)
       if diff > 0 then
         if frac[a] == frac[b] then
@@ -2395,11 +2395,14 @@ function DiceTracker.RunSelfTest()
   local sum = perc.low + perc.seven + perc.high
   assertNear("rounded_sum_100", sum, 100.0, 0.0001, failures)
 
-  -- 4a) Deterministic rounding tie-break (low > seven > high for equal fractions)
+  -- 4a) Deterministic rounding tie-break (low > high > seven for equal fractions)
   local percTie = roundedPercentsTo100({ low = 0.33335, seven = 0.33335, high = 0.3333 })
   assertEq("rounded_tie_low", percTie.low, 33.4, failures)
   assertEq("rounded_tie_seven", percTie.seven, 33.3, failures)
   assertEq("rounded_tie_high", percTie.high, 33.3, failures)
+  local percTie2 = roundedPercentsTo100({ low = 0.3333, seven = 0.33335, high = 0.33335 })
+  assertEq("rounded_tie_high", percTie2.high, 33.4, failures)
+  assertEq("rounded_tie_seven", percTie2.seven, 33.3, failures)
 
   -- 4b) Clamp + renormalize probabilities
   local clamped = clampAndRenorm({ low = 0, seven = 1, high = 0 })
