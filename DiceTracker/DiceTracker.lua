@@ -1482,8 +1482,8 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   actorName = normalizeWhitespace(stripColorAndTextures(actorName or ""))
 
   if not isValidActorName(actorName) then
-    -- Only parse from the message if the sender is missing (not provided by the event payload).
-    if not sender and type(msg) == "string" then
+    -- Only parse from the message if the sender is missing/empty (not provided by the event payload).
+    if (not sender or sender == "") and type(msg) == "string" then
       local parsed = cleanMessage(msg):match("^([^%s]+)%s")
       if parsed and isValidActorName(parsed) then
         actorName = parsed
@@ -2116,6 +2116,12 @@ function DiceTracker.RunSelfTest()
     assertEq("pending_expire_future", pendingA.expireAt >= (pendingA.t0 or 0), true, failures)
   end
 
+  -- 1a) Empty sender should parse actor name from the message.
+  local actorEmpty = "SelfTest-Empty"
+  local emoteMsgEmpty = actorEmpty .. " casually tosses " .. itemLink .. "."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgEmpty, "", 900010, "Player-TESTEMPTY")
+  assertEq("pending_opened_empty_sender", pendingByActorName(actorEmpty) ~= nil, true, failures)
+
   -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
   RT.itemName = nil
@@ -2204,6 +2210,11 @@ function DiceTracker.RunSelfTest()
   end
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorD then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorEmpty then
       RT.pending[k] = nil
     end
   end
