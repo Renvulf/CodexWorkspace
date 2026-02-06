@@ -1307,11 +1307,11 @@ local function resolvePendingKey(rollActor)
     end
   end
   if directCount == 1 then
-    return directMatch
+    return directMatch, nil
   elseif directCount > 1 then
-    return nil -- ambiguous
+    return nil, "roll_actor_ambiguous"
   end
-  return nil
+  return nil, nil
 end
 
 local function expirePending(actorKey, token)
@@ -1560,7 +1560,7 @@ local function onSystemEvent(msg, lineID)
     return
   end
 
-  local key = resolvePendingKey(who)
+  local key, pendingReason = resolvePendingKey(who)
 
   if minV ~= 1 or maxV ~= 6 or roll < 1 or roll > 6 or roll ~= math.floor(roll) then
     if key then
@@ -1572,7 +1572,7 @@ local function onSystemEvent(msg, lineID)
     return
   end
   if not key then
-    bumpDrop("roll_no_pending")
+    bumpDrop(pendingReason or "roll_no_pending")
     return
   end
 
@@ -2272,10 +2272,12 @@ function DiceTracker.RunSelfTest()
   openPendingToss("Player-DUPA", "Dup-RealmA", 90006, "Player-DUPA")
   openPendingToss("Player-DUPB", "Dup-RealmB", 90007, "Player-DUPB")
   local beforeAmbig = DiceTrackerDB.drop.total
+  local beforeAmbigReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.roll_actor_ambiguous) or 0
   onSystemEvent("Dup rolls 3 (1-6)", 90008)
   assertEq("ambig_pending_keptA", pendingByActorName("Dup-RealmA") ~= nil, true, failures)
   assertEq("ambig_pending_keptB", pendingByActorName("Dup-RealmB") ~= nil, true, failures)
   assertEq("ambig_drop_increment", DiceTrackerDB.drop.total, beforeAmbig + 1, failures)
+  assertEq("ambig_drop_reason", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.roll_actor_ambiguous) or 0, beforeAmbigReason + 1, failures)
   for k, entry in pairs(RT.pending) do
     if entry and (entry.actorName == "Dup-RealmA" or entry.actorName == "Dup-RealmB") then
       RT.pending[k] = nil
