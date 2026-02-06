@@ -1456,9 +1456,10 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
   local hasAnyItemLink = msg:find("|Hitem:", 1, true) ~= nil
+  local hasItemLinkForItem = msg:find("|Hitem:" .. ITEM_ID .. ":", 1, true) ~= nil
 
   -- Ensure itemName is populated if possible (helps when the toss line includes only the localized item name).
-  if (not hasAnyItemLink) and (not RT.itemName or RT.itemName == "") then
+  if (not hasItemLinkForItem) and (not RT.itemName or RT.itemName == "") then
     local name = getItemNameNow()
     if name and name ~= "" then
       RT.itemName = name
@@ -1477,7 +1478,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   if RT.itemName and RT.itemName ~= "" then
     mentionsItemName = cleanedMsg:lower():find(RT.itemName:lower(), 1, true) ~= nil
   end
-  if not hasAnyItemLink and not mentionsItemName then
+  if not hasItemLinkForItem and not mentionsItemName then
     return
   end
 
@@ -2148,13 +2149,21 @@ function DiceTracker.RunSelfTest()
     assertEq("pending_expire_future", pendingA.expireAt >= (pendingA.t0 or 0), true, failures)
   end
 
-  -- 1a) Empty sender should parse actor name from the message.
+  -- 1a) Other item links should be ignored (no pending, no drop).
+  local beforeOtherDrop = DiceTrackerDB.drop.total
+  local otherItemLink = "|cffffffff|Hitem:6948:0:0:0:0:0:0:0:0|h[Hearthstone]|h|r"
+  local otherMsg = actor .. " casually tosses " .. otherItemLink .. "."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", otherMsg, actor, 9000101, "Player-TEST1B")
+  assertEq("pending_unchanged_other_item", pendingByActorName(actor) ~= nil, true, failures)
+  assertEq("no_drop_other_item", DiceTrackerDB.drop.total, beforeOtherDrop, failures)
+
+  -- 1b) Empty sender should parse actor name from the message.
   local actorEmpty = "SelfTest-Empty"
   local emoteMsgEmpty = actorEmpty .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgEmpty, "", 900010, "Player-TESTEMPTY")
   assertEq("pending_opened_empty_sender", pendingByActorName(actorEmpty) ~= nil, true, failures)
 
-  -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
+  -- 1c) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
   RT.itemName = nil
   RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
@@ -2171,7 +2180,7 @@ function DiceTracker.RunSelfTest()
   assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback", pendingByActorName(actorB) ~= nil, true, failures)
 
-  -- 1b2) Toss confirmation via item name fallback without brackets (queued while name unavailable)
+  -- 1c2) Toss confirmation via item name fallback without brackets (queued while name unavailable)
   RT.itemName = nil
   RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
   local actorC = "SelfTest-C"
@@ -2186,12 +2195,12 @@ function DiceTracker.RunSelfTest()
   assertEq("item_name_set_after_gate_unbracketed", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback_unbracketed", pendingByActorName(actorC) ~= nil, true, failures)
 
-  -- 1b3) Item name fallback should be case-insensitive in cleaned messages.
+  -- 1c3) Item name fallback should be case-insensitive in cleaned messages.
   local actorC2 = "SelfTest-C2"
   local emoteMsgC2 = actorC2 .. " casually tosses worn troll dice."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2, actorC2, 9000261, "Player-TEST3B")
   assertEq("pending_opened_name_fallback_case_insensitive", pendingByActorName(actorC2) ~= nil, true, failures)
-  -- 1c) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
+  -- 1d) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
   local selfName = selfActorName()
@@ -2209,7 +2218,7 @@ function DiceTracker.RunSelfTest()
     end
   end
 
-  -- 1d) Duplicate toss for same actor name under a different key should replace pending session.
+  -- 1e) Duplicate toss for same actor name under a different key should replace pending session.
   local actorD = "SelfTest-D"
   local emoteMsgD = actorD .. " casually tosses " .. itemLink .. "."
   local beforeOverwrite = DiceTrackerDB.drop.total
