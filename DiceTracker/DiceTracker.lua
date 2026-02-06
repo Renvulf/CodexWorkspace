@@ -2413,8 +2413,16 @@ local function createSettingsPanel()
     end
   end)
 
+  local selfTestBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  selfTestBtn:SetSize(160, 24)
+  selfTestBtn:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -8)
+  selfTestBtn:SetText("Run Self-Test")
+  selfTestBtn:SetScript("OnClick", function()
+    DiceTracker.RunSelfTest()
+  end)
+
   local note = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  note:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -10)
+  note:SetPoint("TOPLEFT", selfTestBtn, "BOTTOMLEFT", 0, -10)
   note:SetWidth(580)
   note:SetJustifyH("LEFT")
   note:SetText("Resets learned statistics (global + per-actor). UI settings and frame position are kept.")
