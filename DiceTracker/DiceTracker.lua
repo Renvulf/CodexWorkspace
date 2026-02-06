@@ -613,7 +613,7 @@ local function migrateIfNeeded(existing)
       db.settings.target = { mode = "auto", actor = nil }
     end
     local mode = db.settings.target.mode
-    if mode ~= "auto" and mode ~= "me" and mode ~= "global" and mode ~= "actor" then
+    if mode ~= "auto" and mode ~= "me" and mode ~= "global" and mode ~= "target" and mode ~= "actor" then
       db.settings.target.mode = "auto"
       db.settings.target.actor = nil
     end
@@ -1649,6 +1649,13 @@ local function computeEffectiveTarget()
   if mode == "me" then
     return selfActorKey(), "me"
   end
+  if mode == "target" then
+    local targetKey = targetActorKey()
+    if targetKey then
+      return targetKey, "target"
+    end
+    return "GLOBAL", "target-global"
+  end
   if mode == "actor" and t.actor and t.actor ~= "" then
     return t.actor, "actor"
   end
@@ -1693,6 +1700,7 @@ local function selectionText()
   local mode = t and t.mode or "auto"
   if mode == "auto" then return "Auto" end
   if mode == "me" then return "Me" end
+  if mode == "target" then return "Target" end
   if mode == "global" then return "Global" end
   if mode == "actor" and t.actor then return displayNameForActorKey(t.actor) end
   return "Auto"
@@ -1729,6 +1737,9 @@ local function dropdownInit(self, level)
     elseif v == "me" then
       DiceTrackerDB.settings.target.mode = "me"
       DiceTrackerDB.settings.target.actor = nil
+    elseif v == "target" then
+      DiceTrackerDB.settings.target.mode = "target"
+      DiceTrackerDB.settings.target.actor = nil
     elseif v == "global" then
       DiceTrackerDB.settings.target.mode = "global"
       DiceTrackerDB.settings.target.actor = nil
@@ -1743,6 +1754,9 @@ local function dropdownInit(self, level)
   UIDropDownMenu_AddButton(info, level)
 
   info.text, info.value = "Me", "me"
+  UIDropDownMenu_AddButton(info, level)
+
+  info.text, info.value = "Target", "target"
   UIDropDownMenu_AddButton(info, level)
 
   info.text, info.value = "Global", "global"
@@ -2110,6 +2124,16 @@ function DiceTracker.RunSelfTest()
   RT.selfTestTargetKey = nil
   local autoGlobalKey = computeEffectiveTarget()
   assertEq("auto_target_global", autoGlobalKey, "GLOBAL", failures)
+
+  -- 0a) Manual target mode falls back to global when invalid
+  DiceTrackerDB.settings.target.mode = "target"
+  RT.selfTestTargetKey = "Player-SELFTESTTARGET-0002"
+  local targetKey = computeEffectiveTarget()
+  assertEq("target_mode_key", targetKey, "Player-SELFTESTTARGET-0002", failures)
+  RT.selfTestTargetKey = nil
+  local targetFallbackKey = computeEffectiveTarget()
+  assertEq("target_mode_fallback_global", targetFallbackKey, "GLOBAL", failures)
+  DiceTrackerDB.settings.target.mode = "auto"
 
   -- 1) Toss confirmation via hyperlink
   local actor = "SelfTest-A"
