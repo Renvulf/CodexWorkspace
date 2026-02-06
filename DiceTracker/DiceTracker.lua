@@ -1336,6 +1336,7 @@ local function openPendingToss(actorKeyPrimary, actorName, lineID, guid)
     actorKeyPrimary = actorKeyPrimary,
     actorName = actorName,
     t0 = now,
+    expireAt = now + MAX_WAIT_SECONDS,
     rolls = {},
     tossLineID = lineID,
     tossGuid = guid,
@@ -1565,6 +1566,11 @@ local function onSystemEvent(msg, lineID)
   end
 
   if (safeNow() - (entry.t0 or 0)) > MAX_WAIT_SECONDS then
+    RT.pending[key] = nil
+    bumpDrop("pending_timeout")
+    return
+  end
+  if entry.expireAt and safeNow() > entry.expireAt then
     RT.pending[key] = nil
     bumpDrop("pending_timeout")
     return
@@ -2087,6 +2093,11 @@ function DiceTracker.RunSelfTest()
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsg, actor, 90001, "Player-TEST1")
   assertEq("pending_opened_hyperlink", pendingByActorName(actor) ~= nil, true, failures)
   assertEq("auto_target_recent", RT.lastConfirmedActor, actor, failures)
+  local pendingA = pendingByActorName(actor)
+  if pendingA then
+    assertEq("pending_has_expire", pendingA.expireAt ~= nil, true, failures)
+    assertEq("pending_expire_future", pendingA.expireAt >= (pendingA.t0 or 0), true, failures)
+  end
 
   -- 1b) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
