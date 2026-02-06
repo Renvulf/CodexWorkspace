@@ -24,7 +24,7 @@ local FAIR_ANCHOR = {
   high = 15/36,
 }
 
-local SCHEMA_VERSION = 6
+local SCHEMA_VERSION = 7
 
 local RT
 
@@ -416,6 +416,13 @@ local function newEmptyModel()
       combinedDisplayed = nil,
     },
 
+    -- Cached expert weights (diagnostics only; derived from losses)
+    weights = {
+      E1 = nil,
+      E2 = nil,
+      E3 = nil,
+    },
+
     meta = {
       lastSeen = 0,
       displayName = nil,
@@ -509,6 +516,12 @@ local function ensureModelTables(m)
   end
 
   m.loss = m.loss or {}
+  m.weights = m.weights or {}
+  for _, k in ipairs({ "E1", "E2", "E3" }) do
+    if m.weights[k] ~= nil and type(m.weights[k]) ~= "number" then
+      m.weights[k] = nil
+    end
+  end
   m.meta = m.meta or {}
   m.meta.lastSeen = tonumber(m.meta.lastSeen) or 0
   if m.meta.displayName ~= nil and type(m.meta.displayName) ~= "string" then
@@ -1194,6 +1207,10 @@ local function computeModelDisplayedPrediction(model)
   local expertProbs = gatherExpertProbs(model)
 
   local weights, bestAdv = computeWeightsVsAnchor(model, expertProbs)
+  model.weights = model.weights or {}
+  for k, w in pairs(weights) do
+    model.weights[k] = w
+  end
   local mixed = mixExperts(weights, expertProbs)
   local displayed, gate = anchorGate(model, mixed, bestAdv)
 
@@ -2346,6 +2363,12 @@ function DiceTracker.RunSelfTest()
 
   local expectedE1NLL = -math.log(1/3)
   assertNear("nll_E1_prelearn", DiceTrackerDB.global.loss.E1, expectedE1NLL, 1e-6, failures)
+
+  -- 5b) Expert weights should be cached and normalized
+  local w = DiceTrackerDB.global.weights or {}
+  assertEq("weights_present", (type(w.E1) == "number" and type(w.E2) == "number" and type(w.E3) == "number"), true, failures)
+  local wsum = (tonumber(w.E1) or 0) + (tonumber(w.E2) or 0) + (tonumber(w.E3) or 0)
+  assertNear("weights_sum_1", wsum, 1.0, 1e-6, failures)
 
   -- Restore state
   DiceTrackerDB = backupDB
