@@ -177,9 +177,16 @@ local function targetActorKey()
     local n, r = UnitFullName("target")
     if n and n ~= "" then
       if r and r ~= "" then
-        return n .. "-" .. r
+        local full = n .. "-" .. r
+        if isValidActorName(full) then
+          return full
+        end
+        return nil
       end
-      return n
+      if isValidActorName(n) then
+        return n
+      end
+      return nil
     end
   end
   return nil
