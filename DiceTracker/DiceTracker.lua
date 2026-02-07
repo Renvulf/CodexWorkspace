@@ -54,7 +54,6 @@ local ACTOR_ADV1  = 0.050
 
 -- Runtime limits (bounded memory footprint)
 local MAX_ACTORS = 50  -- LRU bounded
-local AUTO_WINDOW = 15 -- seconds after a confirmed toss to auto-target that actor
 
 -- Pending pairing window (conservative TTL)
 local MAX_WAIT_SECONDS = 5

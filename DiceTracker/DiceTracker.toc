@@ -2,7 +2,7 @@
 ## Title: DiceTracker
 ## Notes: Tracks Worn Troll Dice tosses and learns a best-guess strategy (Low / 7 / High).
 ## Author: SevenGod (rewritten)
-## Version: 2.5
+## Version: 2.6
 ## SavedVariables: DiceTrackerDB
 
 DiceTracker.lua
