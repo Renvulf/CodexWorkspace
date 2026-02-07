@@ -699,6 +699,7 @@ DiceTrackerDB = nil
 -- Item confirmation for toss
 -- -----------------------------
 local onTossEvent
+local isConfirmedTossMessage
 
 local function getItemNameNow()
   if RT.selfTesting and RT.selfTestItemNameGate then
@@ -740,7 +741,11 @@ local function processPendingUnknownTosses()
     if entry then
       if RT.itemName and RT.itemName ~= "" then
         RT.pendingUnknownTosses[k] = nil
-        onTossEvent(entry.event, entry.msg, entry.sender, entry.lineID, entry.guid, false)
+        if isConfirmedTossMessage and isConfirmedTossMessage(entry.msg) then
+          onTossEvent(entry.event, entry.msg, entry.sender, entry.lineID, entry.guid, false)
+        else
+          bumpDrop("toss_not_confirmed")
+        end
       else
         entry.attempts = (entry.attempts or 0) + 1
         if entry.attempts >= ITEMNAME_RETRY_MAX then
@@ -797,7 +802,7 @@ local function queueUnknownToss(event, msg, sender, lineID, guid)
   processPendingUnknownTosses()
 end
 
-local function isConfirmedTossMessage(msg)
+isConfirmedTossMessage = function(msg)
   if type(msg) ~= "string" then return false end
   if msg:find("|Hitem:" .. ITEM_ID .. ":", 1, true) then
     return true
@@ -2343,6 +2348,20 @@ function DiceTracker.RunSelfTest()
   assertEq("unknown_toss_dropped", DiceTrackerDB.drop.total, beforeUnknownDrop + 1, failures)
   assertEq("unknown_toss_reason", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_item_unknown) or 0, beforeUnknownReason + 1, failures)
   assertEq("unknown_toss_queue_cleared", pendingUnknownCount(), 0, failures)
+
+  -- 1d5) Queued toss that doesn't confirm after item name resolves should drop as not confirmed.
+  local beforeNotConfirmedDrop = DiceTrackerDB.drop.total
+  local beforeNotConfirmedReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_not_confirmed) or 0
+  RT.itemName = nil
+  RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
+  local actorC4 = "SelfTest-C4"
+  local emoteMsgC4 = actorC4 .. " ponders the dice."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC4, actorC4, 9000263, "Player-TEST3D")
+  processPendingUnknownTosses()
+  processPendingUnknownTosses()
+  assertEq("not_confirmed_drop_increment", DiceTrackerDB.drop.total, beforeNotConfirmedDrop + 1, failures)
+  assertEq("not_confirmed_reason", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_not_confirmed) or 0, beforeNotConfirmedReason + 1, failures)
+  assertEq("not_confirmed_queue_cleared", pendingUnknownCount(), 0, failures)
   -- 1d) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
