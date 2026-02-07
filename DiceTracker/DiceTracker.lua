@@ -161,6 +161,8 @@ local function isGuidKey(key)
   return key:match("^Player%-%x+%-%x+") ~= nil
 end
 
+local isValidActorName
+
 local function targetActorKey()
   if RT.selfTesting and RT.selfTestTargetKey then
     return RT.selfTestTargetKey
@@ -192,7 +194,7 @@ local function targetActorKey()
   return nil
 end
 
-local function isValidActorName(name)
+isValidActorName = function(name)
   if type(name) ~= "string" then return false end
   name = normalizeWhitespace(name)
   if name == "" then return false end
