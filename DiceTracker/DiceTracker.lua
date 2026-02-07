@@ -2016,7 +2016,8 @@ local function formatDebugOverlay(targetKey, combinedMeta, combinedProbs)
   line[#line + 1] = table.concat(dropParts, "  ")
 
   local g = db.global
-  local a = (targetKey and targetKey ~= "GLOBAL") and db.actors.map[targetKey] or nil
+  local actorMap = (db.actors and db.actors.map) or nil
+  local a = (targetKey and targetKey ~= "GLOBAL" and actorMap) and actorMap[targetKey] or nil
   local gMass = g and g.bucket and tonumber(g.bucket.total) or 0
   local aMass = a and a.bucket and tonumber(a.bucket.total) or 0
   line[#line + 1] = string.format("Mass: global=%d  actor=%d", gMass, aMass)
