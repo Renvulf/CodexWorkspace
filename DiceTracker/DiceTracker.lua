@@ -343,6 +343,7 @@ RT = {
   },
 
   pendingUnknownTosses = {}, -- [key]=entry (bounded)
+  pendingUnknownTimer = nil,
 }
 
 local function dedupeLineID(lineID)
@@ -703,6 +704,7 @@ local function refreshItemName(attempt)
 end
 
 local function processPendingUnknownTosses()
+  local needsRetry = false
   local keys = {}
   for k in pairs(RT.pendingUnknownTosses) do
     keys[#keys + 1] = k
@@ -721,9 +723,7 @@ local function processPendingUnknownTosses()
           RT.pendingUnknownTosses[k] = nil
           bumpDrop("toss_item_unknown")
         elseif (not RT.selfTesting) and C_Timer and C_Timer.After then
-          C_Timer.After(ITEMNAME_RETRY_DELAY, function()
-            processPendingUnknownTosses()
-          end)
+          needsRetry = true
         elseif not RT.selfTesting then
           -- If timers are unavailable, avoid leaving unknown tosses stuck.
           RT.pendingUnknownTosses[k] = nil
@@ -731,6 +731,16 @@ local function processPendingUnknownTosses()
         end
       end
     end
+  end
+
+  if needsRetry and not RT.pendingUnknownTimer and (not RT.selfTesting) and C_Timer and C_Timer.After then
+    RT.pendingUnknownTimer = true
+    C_Timer.After(ITEMNAME_RETRY_DELAY, function()
+      RT.pendingUnknownTimer = nil
+      processPendingUnknownTosses()
+    end)
+  elseif not next(RT.pendingUnknownTosses) then
+    RT.pendingUnknownTimer = nil
   end
 end
 
@@ -2146,6 +2156,7 @@ function DiceTracker.RunSelfTest()
     selfTestSelfName = RT.selfTestSelfName,
     selfTestSelfGuid = RT.selfTestSelfGuid,
     pendingUnknownTosses = deepCopy(RT.pendingUnknownTosses),
+    pendingUnknownTimer = RT.pendingUnknownTimer,
   }
 
   -- Isolate runtime + DB
@@ -2159,6 +2170,7 @@ function DiceTracker.RunSelfTest()
   RT.lineIdQueue = {}
   RT.ttlSeen = {}
   RT.pendingUnknownTosses = {}
+  RT.pendingUnknownTimer = nil
 
   DiceTrackerDB = migrateIfNeeded({})
   _G.DiceTrackerDB = DiceTrackerDB
@@ -2526,6 +2538,7 @@ function DiceTracker.RunSelfTest()
   RT.selfTestSelfName = backupRuntime.selfTestSelfName
   RT.selfTestSelfGuid = backupRuntime.selfTestSelfGuid
   RT.pendingUnknownTosses = backupRuntime.pendingUnknownTosses
+  RT.pendingUnknownTimer = backupRuntime.pendingUnknownTimer
 
   RT.lastDebug.selfTest = RT.lastDebug.selfTest or {}
   RT.lastDebug.selfTest.ran = true
