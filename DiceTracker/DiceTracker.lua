@@ -98,6 +98,9 @@ local function stripColorAndTextures(s)
   if type(s) ~= "string" then return "" end
   s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
   s = s:gsub("|T.-|t", "")
+  s = s:gsub("|H.-|h(.-)|h", "%1")
+  s = s:gsub("|H.-|h", "")
+  s = s:gsub("|h", "")
   return s
 end
 
@@ -2176,6 +2179,9 @@ function DiceTracker.RunSelfTest()
   -- 1) Toss confirmation via hyperlink
   local actor = "SelfTest-A"
   local itemLink = "|cffffffff|Hitem:" .. ITEM_ID .. ":0:0:0:0:0:0:0:0|h[Worn Troll Dice]|h|r"
+  local cleanedLink = cleanMessage(itemLink)
+  assertEq("clean_link_strips_hyperlink", cleanedLink and cleanedLink:find("|H", 1, true) == nil, true, failures)
+  assertEq("clean_link_keeps_name", cleanedLink and cleanedLink:find("Worn Troll Dice", 1, true) ~= nil, true, failures)
   local emoteMsg = actor .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsg, actor, 90001, "Player-TEST1")
   assertEq("pending_opened_hyperlink", pendingByActorName(actor) ~= nil, true, failures)
