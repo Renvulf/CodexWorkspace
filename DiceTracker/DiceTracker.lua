@@ -1464,6 +1464,10 @@ local function finalizeSample(actorKey, actorName, die1, die2)
 
   local globalModel = db.global
   local actorModel = ensureActorModelWithDisplay(actorKey, actorName)
+  if not actorModel then
+    bumpDrop("actor_model_missing")
+    return
+  end
 
   -- Compute predictions pre-learn
   local globalP, globalMeta = computeModelDisplayedPrediction(globalModel)
@@ -2425,6 +2429,7 @@ function DiceTracker.RunSelfTest()
   RT.itemName = keepName
 
   -- 2) Roll parsing + pairing: two d6 rolls should finalize exactly one sample
+  local beforeMissingModel = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.actor_model_missing) or 0
   local rollMsg1 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
   local rollMsg2 = safeFormatRoll(_G.RANDOM_ROLL_RESULT, actor, 1, 1, 6)
   if rollMsg1 and rollMsg2 then
@@ -2434,6 +2439,7 @@ function DiceTracker.RunSelfTest()
 
   assertEq("pending_cleared_after_two", pendingByActorName(actor) == nil, true, failures)
   assertEq("lastSample_bucket_low", DiceTrackerDB.lastSample and DiceTrackerDB.lastSample.bucket, "low", failures)
+  assertEq("no_actor_model_missing_drop", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.actor_model_missing) or 0, beforeMissingModel, failures)
 
   -- 2b) Fallback roll parsing with dash glyph: must still require (1–6)
   local dashMsg = actor .. " rolls 4 (1–6)"
