@@ -1326,6 +1326,19 @@ local function resolvePendingKey(rollActor)
   elseif directCount > 1 then
     return nil, "roll_actor_ambiguous"
   end
+  -- If only a base name matches realm-qualified pending actors, treat as ambiguous (never guess realms).
+  local rollBase = baseName(rollActor or "")
+  if rollBase and rollBase ~= "" then
+    local baseCount = 0
+    for _, entry in pairs(RT.pending) do
+      if entry and entry.actorName and baseName(entry.actorName) == rollBase then
+        baseCount = baseCount + 1
+      end
+    end
+    if baseCount > 0 then
+      return nil, "roll_actor_ambiguous"
+    end
+  end
   return nil, nil
 end
 
