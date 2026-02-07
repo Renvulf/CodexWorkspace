@@ -699,6 +699,7 @@ DiceTrackerDB = nil
 -- -----------------------------
 local onTossEvent
 local isConfirmedTossMessage
+local itemNameMatchesMessage
 
 local function getItemNameNow()
   if RT.selfTesting and RT.selfTestItemNameGate then
@@ -806,14 +807,27 @@ isConfirmedTossMessage = function(msg)
   if msg:find("|Hitem:" .. ITEM_ID .. ":", 1, true) then
     return true
   end
-  local itemName = RT.itemName
-  if itemName and itemName ~= "" then
-    local cleaned = cleanMessage(msg)
-    if cleaned:lower():find(itemName:lower(), 1, true) then
-      return true
-    end
+  if itemNameMatchesMessage and itemNameMatchesMessage(msg) then
+    return true
   end
   return false
+end
+
+itemNameMatchesMessage = function(msg)
+  local itemName = RT.itemName
+  if not itemName or itemName == "" or type(msg) ~= "string" then
+    return false
+  end
+  local cleaned = cleanMessage(msg):lower()
+  local needle = itemName:lower()
+  local s, e = cleaned:find(needle, 1, true)
+  if not s or not e then return false end
+  local prev = s > 1 and cleaned:sub(s - 1, s - 1) or ""
+  local nextC = e < #cleaned and cleaned:sub(e + 1, e + 1) or ""
+  if prev:match("[%w]") or nextC:match("[%w]") then
+    return false
+  end
+  return true
 end
 
 -- -----------------------------
@@ -1558,8 +1572,8 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   end
 
   local mentionsItemName = false
-  if RT.itemName and RT.itemName ~= "" then
-    mentionsItemName = cleanedMsg:lower():find(RT.itemName:lower(), 1, true) ~= nil
+  if RT.itemName and RT.itemName ~= "" and itemNameMatchesMessage then
+    mentionsItemName = itemNameMatchesMessage(cleanedMsg)
   end
   if not hasItemLinkForItem and not mentionsItemName then
     return
@@ -2337,6 +2351,12 @@ function DiceTracker.RunSelfTest()
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2, actorC2, 9000261, "Player-TEST3B")
   assertEq("pending_opened_name_fallback_case_insensitive", pendingByActorName(actorC2) ~= nil, true, failures)
 
+  -- 1d3b) Item name fallback should reject partial word matches.
+  local actorC2b = "SelfTest-C2b"
+  local emoteMsgC2b = actorC2b .. " casually tosses Worn Troll Dicey."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2b, actorC2b, 90002615, "Player-TEST3B2")
+  assertEq("pending_not_opened_partial_item_name", pendingByActorName(actorC2b) == nil, true, failures)
+
   -- 1d4) Unknown item name retries should drop after bounded attempts.
   local beforeUnknownDrop = DiceTrackerDB.drop.total
   local beforeUnknownReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_item_unknown) or 0
@@ -2412,6 +2432,11 @@ function DiceTracker.RunSelfTest()
   end
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorC2 then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorC2b then
       RT.pending[k] = nil
     end
   end
