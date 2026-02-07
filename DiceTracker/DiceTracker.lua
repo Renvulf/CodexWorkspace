@@ -140,6 +140,9 @@ local function selfActorKey()
 end
 
 local function stableActorKeyFromNameGuid(name, guid)
+  if name and name ~= "" and name == selfActorName() then
+    return selfActorKey()
+  end
   if type(guid) == "string" and guid ~= "" then
     return guid
   end
@@ -2296,6 +2299,7 @@ function DiceTracker.RunSelfTest()
   local emoteMsgYou = youWord .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgYou, nil, 900021, "Player-SELFTESTYOU")
   assertEq("pending_opened_you_no_sender", pendingByActorName(selfName) ~= nil, true, failures)
+  assertEq("pending_key_uses_self_guid", RT.pending[selfKey] ~= nil, true, failures)
 
   -- Feed one localized self roll line (if we can format it) and verify pairing sticks to selfKey without finalizing.
   if type(_G.RANDOM_ROLL_RESULT_SELF) == "string" then
