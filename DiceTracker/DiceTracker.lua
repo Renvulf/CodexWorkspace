@@ -1331,6 +1331,21 @@ local function expirePending(actorKey, token)
   DiceTracker.UpdateUI()
 end
 
+local function finalizePendingIfStable(actorKey, token)
+  local entry = RT.pending[actorKey]
+  if not entry or entry.finalizeToken ~= token then return end
+  if entry.expireAt and safeNow() > entry.expireAt then
+    RT.pending[actorKey] = nil
+    bumpDrop("pending_timeout")
+    return
+  end
+  if type(entry.rolls) ~= "table" or #entry.rolls ~= 2 then
+    return
+  end
+  RT.pending[actorKey] = nil
+  finalizeSample(entry.actorKeyPrimary or entry.actorName or actorKey, entry.actorName or entry.actorKeyPrimary or actorKey, entry.rolls[1], entry.rolls[2])
+end
+
 local function openPendingToss(actorKeyPrimary, actorName, lineID, guid)
   local now = safeNow()
   if not actorKeyPrimary or actorKeyPrimary == "" then return end
@@ -1611,8 +1626,16 @@ local function onSystemEvent(msg, lineID)
   rolls[#rolls + 1] = roll
 
   if #rolls == 2 then
-    RT.pending[key] = nil
-    finalizeSample(entry.actorKeyPrimary or entry.actorName or key, entry.actorName or entry.actorKeyPrimary or key, rolls[1], rolls[2])
+    if RT.selfTesting or not (C_Timer and C_Timer.After) then
+      RT.pending[key] = nil
+      finalizeSample(entry.actorKeyPrimary or entry.actorName or key, entry.actorName or entry.actorKeyPrimary or key, rolls[1], rolls[2])
+    else
+      local token = (safeNow() + math.random())
+      entry.finalizeToken = token
+      C_Timer.After(0.2, function()
+        finalizePendingIfStable(key, token)
+      end)
+    end
   elseif #rolls > 2 then
     RT.pending[key] = nil
     bumpDrop("pending_overflow")
