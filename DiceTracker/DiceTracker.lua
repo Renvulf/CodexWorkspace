@@ -265,6 +265,16 @@ local function safeNow()
   return 0
 end
 
+local function normalizeLineID(lineID)
+  if type(lineID) == "string" then
+    local n = tonumber(lineID)
+    if n then
+      return n
+    end
+  end
+  return lineID
+end
+
 -- Rounding to 1 decimal each with exact 100.0 total after rounding.
 local function roundedPercentsTo100(p)
   local raw = {
@@ -1502,6 +1512,7 @@ end
 -- -----------------------------
 local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   if allowQueue == nil then allowQueue = true end
+  lineID = normalizeLineID(lineID)
   -- Prefilter: ignore unrelated emotes to keep drop counters meaningful.
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
@@ -1590,6 +1601,7 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
 end
 
 local function onSystemEvent(msg, lineID)
+  lineID = normalizeLineID(lineID)
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
   if not isPotentialRollMessage(cleanedMsg) then
@@ -2246,6 +2258,20 @@ function DiceTracker.RunSelfTest()
   assertEq("dedupe_string_lineid_drop", DiceTrackerDB.drop.total, beforeDedupeDrop + 1, failures)
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == dedupeActor then
+      RT.pending[k] = nil
+    end
+  end
+
+  -- 1b2) Numeric string lineIDs should be treated as numeric for dedupe.
+  local numLineActor = "SelfTest-NumLine"
+  local numLineMsg = numLineActor .. " casually tosses " .. itemLink .. "."
+  local beforeNumLineDrop = DiceTrackerDB.drop.total
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", numLineMsg, numLineActor, "91001", "Player-NUMLINE")
+  assertEq("numline_pending_opened", pendingByActorName(numLineActor) ~= nil, true, failures)
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", numLineMsg, numLineActor, "91001", "Player-NUMLINE")
+  assertEq("numline_dedupe_drop", DiceTrackerDB.drop.total, beforeNumLineDrop + 1, failures)
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == numLineActor then
       RT.pending[k] = nil
     end
   end
