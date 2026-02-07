@@ -721,6 +721,10 @@ local function processPendingUnknownTosses()
           C_Timer.After(ITEMNAME_RETRY_DELAY, function()
             processPendingUnknownTosses()
           end)
+        elseif not RT.selfTesting then
+          -- If timers are unavailable, avoid leaving unknown tosses stuck.
+          RT.pendingUnknownTosses[k] = nil
+          bumpDrop("toss_item_unknown")
         end
       end
     end
@@ -2239,6 +2243,21 @@ function DiceTracker.RunSelfTest()
   local emoteMsgC2 = actorC2 .. " casually tosses worn troll dice."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2, actorC2, 9000261, "Player-TEST3B")
   assertEq("pending_opened_name_fallback_case_insensitive", pendingByActorName(actorC2) ~= nil, true, failures)
+
+  -- 1c4) Unknown item name retries should drop after bounded attempts.
+  local beforeUnknownDrop = DiceTrackerDB.drop.total
+  local beforeUnknownReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_item_unknown) or 0
+  RT.itemName = nil
+  RT.selfTestItemNameGate = { remaining = ITEMNAME_RETRY_MAX + 1, name = "Worn Troll Dice" }
+  local actorC3 = "SelfTest-C3"
+  local emoteMsgC3 = actorC3 .. " casually tosses Worn Troll Dice."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC3, actorC3, 9000262, "Player-TEST3C")
+  for _ = 1, ITEMNAME_RETRY_MAX do
+    processPendingUnknownTosses()
+  end
+  assertEq("unknown_toss_dropped", DiceTrackerDB.drop.total, beforeUnknownDrop + 1, failures)
+  assertEq("unknown_toss_reason", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_item_unknown) or 0, beforeUnknownReason + 1, failures)
+  assertEq("unknown_toss_queue_cleared", pendingUnknownCount(), 0, failures)
   -- 1d) Toss line that starts with localized "You" and has no sender must map deterministically to the local player
   local youWord = (_G and type(_G.YOU) == "string") and _G.YOU or "You"
   local selfKey = selfActorKey()
