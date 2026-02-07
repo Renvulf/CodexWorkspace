@@ -708,6 +708,10 @@ end
 
 local function processPendingUnknownTosses()
   local needsRetry = false
+  local fetchedName = getItemNameNow()
+  if fetchedName and fetchedName ~= "" then
+    RT.itemName = fetchedName
+  end
   local keys = {}
   for k in pairs(RT.pendingUnknownTosses) do
     keys[#keys + 1] = k
@@ -715,9 +719,7 @@ local function processPendingUnknownTosses()
   for _, k in ipairs(keys) do
     local entry = RT.pendingUnknownTosses[k]
     if entry then
-      local name = getItemNameNow()
-      if name and name ~= "" then
-        RT.itemName = name
+      if RT.itemName and RT.itemName ~= "" then
         RT.pendingUnknownTosses[k] = nil
         onTossEvent(entry.event, entry.msg, entry.sender, entry.lineID, entry.guid, false)
       else
