@@ -1567,11 +1567,11 @@ local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   local actorKeyPrimary = stableActorKeyFromNameGuid(actorName, guid)
 
   -- Dedupe
-  if lineID and dedupeLineID(lineID) then
+  if type(lineID) == "number" and dedupeLineID(lineID) then
     bumpDrop("dedupe_lineid")
     return
   end
-  if not lineID then
+  if type(lineID) ~= "number" then
     local key = tostring(event) .. "|" .. tostring(actorKeyPrimary or actorName) .. "|" .. tostring(cleanedMsg)
     if dedupeTTL(key) then
       bumpDrop("dedupe_ttl")
@@ -1596,7 +1596,7 @@ local function onSystemEvent(msg, lineID)
   msg = cleanedMsg
 
   -- Dedupe
-  if lineID and dedupeLineID(lineID) then
+  if type(lineID) == "number" and dedupeLineID(lineID) then
     bumpDrop("dedupe_lineid")
     return
   end
@@ -1607,7 +1607,7 @@ local function onSystemEvent(msg, lineID)
     return
   end
 
-  if not lineID then
+  if type(lineID) ~= "number" then
     local key = "SYS|" .. tostring(who) .. "|" .. tostring(msg)
     if dedupeTTL(key) then
       bumpDrop("dedupe_ttl")
@@ -2234,13 +2234,27 @@ function DiceTracker.RunSelfTest()
   assertEq("other_item_no_queue", pendingUnknownCount(), beforeOtherQueue, failures)
   RT.itemName = keepNameOther
 
-  -- 1b) Empty sender should parse actor name from the message.
+  -- 1b) Dedupe TTL when lineID is non-numeric (string).
+  local dedupeActor = "SelfTest-Dedupe"
+  local dedupeMsg = dedupeActor .. " casually tosses " .. itemLink .. "."
+  local beforeDedupeDrop = DiceTrackerDB.drop.total
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", dedupeMsg, dedupeActor, "DEDUP-1", "Player-DEDUP")
+  assertEq("dedupe_pending_opened_string_lineid", pendingByActorName(dedupeActor) ~= nil, true, failures)
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", dedupeMsg, dedupeActor, "DEDUP-1", "Player-DEDUP")
+  assertEq("dedupe_string_lineid_drop", DiceTrackerDB.drop.total, beforeDedupeDrop + 1, failures)
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == dedupeActor then
+      RT.pending[k] = nil
+    end
+  end
+
+  -- 1c) Empty sender should parse actor name from the message.
   local actorEmpty = "SelfTest-Empty"
   local emoteMsgEmpty = actorEmpty .. " casually tosses " .. itemLink .. "."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgEmpty, "", 900010, "Player-TESTEMPTY")
   assertEq("pending_opened_empty_sender", pendingByActorName(actorEmpty) ~= nil, true, failures)
 
-  -- 1c) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
+  -- 1d) Toss confirmation via item name fallback (deterministic GetItemInfo delay)
   local keepName = RT.itemName
   RT.itemName = nil
   RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
@@ -2257,7 +2271,7 @@ function DiceTracker.RunSelfTest()
   assertEq("item_name_set_after_gate", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback", pendingByActorName(actorB) ~= nil, true, failures)
 
-  -- 1c2) Toss confirmation via item name fallback without brackets (queued while name unavailable)
+  -- 1d2) Toss confirmation via item name fallback without brackets (queued while name unavailable)
   RT.itemName = nil
   RT.selfTestItemNameGate = { remaining = 1, name = "Worn Troll Dice" }
   local actorC = "SelfTest-C"
@@ -2272,13 +2286,13 @@ function DiceTracker.RunSelfTest()
   assertEq("item_name_set_after_gate_unbracketed", RT.itemName, "Worn Troll Dice", failures)
   assertEq("pending_opened_name_fallback_unbracketed", pendingByActorName(actorC) ~= nil, true, failures)
 
-  -- 1c3) Item name fallback should be case-insensitive in cleaned messages.
+  -- 1d3) Item name fallback should be case-insensitive in cleaned messages.
   local actorC2 = "SelfTest-C2"
   local emoteMsgC2 = actorC2 .. " casually tosses worn troll dice."
   onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgC2, actorC2, 9000261, "Player-TEST3B")
   assertEq("pending_opened_name_fallback_case_insensitive", pendingByActorName(actorC2) ~= nil, true, failures)
 
-  -- 1c4) Unknown item name retries should drop after bounded attempts.
+  -- 1d4) Unknown item name retries should drop after bounded attempts.
   local beforeUnknownDrop = DiceTrackerDB.drop.total
   local beforeUnknownReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.toss_item_unknown) or 0
   RT.itemName = nil
