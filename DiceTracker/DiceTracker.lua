@@ -1418,6 +1418,19 @@ local function finalizePendingIfStable(actorKey, token)
   finalizeSample(entry.actorKeyPrimary or entry.actorName or actorKey, entry.actorName or entry.actorKeyPrimary or actorKey, entry.rolls[1], entry.rolls[2])
 end
 
+local function pruneExpiredPending()
+  local now = safeNow()
+  for k, entry in pairs(RT.pending) do
+    if entry then
+      local exp = entry.expireAt or ((entry.t0 or 0) + MAX_WAIT_SECONDS)
+      if exp > 0 and now > exp then
+        RT.pending[k] = nil
+        bumpDrop("pending_timeout")
+      end
+    end
+  end
+end
+
 local function openPendingToss(actorKeyPrimary, actorName, lineID, guid)
   local now = safeNow()
   if not actorKeyPrimary or actorKeyPrimary == "" then return end
@@ -1544,6 +1557,7 @@ end
 local function onTossEvent(event, msg, sender, lineID, guid, allowQueue)
   if allowQueue == nil then allowQueue = true end
   lineID = normalizeLineID(lineID)
+  pruneExpiredPending()
   -- Prefilter: ignore unrelated emotes to keep drop counters meaningful.
   if type(msg) ~= "string" then return end
   local cleanedMsg = cleanMessage(msg)
@@ -2415,6 +2429,20 @@ function DiceTracker.RunSelfTest()
   assertEq("pending_replaced_same_actor", pendingByActorName(actorD) ~= nil, true, failures)
   assertEq("pending_replaced_drop_increment", DiceTrackerDB.drop.total, beforeOverwrite + 1, failures)
 
+  -- 1f) Expired pending should be pruned on the next toss.
+  local beforePruneDrop = DiceTrackerDB.drop.total
+  openPendingToss("Player-OLD", "OldActor", 900028, "Player-OLD")
+  local oldEntry = pendingByActorName("OldActor")
+  if oldEntry then
+    oldEntry.expireAt = safeNow() - 1
+  end
+  local actorE = "SelfTest-E"
+  local emoteMsgE = actorE .. " casually tosses " .. itemLink .. "."
+  onTossEvent("CHAT_MSG_TEXT_EMOTE", emoteMsgE, actorE, 900029, "Player-TESTE")
+  assertEq("expired_pending_pruned", pendingByActorName("OldActor") == nil, true, failures)
+  assertEq("expired_pending_drop_increment", DiceTrackerDB.drop.total, beforePruneDrop + 1, failures)
+  assertEq("new_pending_present", pendingByActorName(actorE) ~= nil, true, failures)
+
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == selfName then
       RT.pending[k] = nil
@@ -2443,6 +2471,11 @@ function DiceTracker.RunSelfTest()
   end
   for k, entry in pairs(RT.pending) do
     if entry and entry.actorName == actorD then
+      RT.pending[k] = nil
+    end
+  end
+  for k, entry in pairs(RT.pending) do
+    if entry and entry.actorName == actorE then
       RT.pending[k] = nil
     end
   end
