@@ -879,7 +879,7 @@ local function parseRollLine(msg)
     if who and roll and minV and maxV then
       who = normalizeWhitespace(stripColorAndTextures(who))
       if not isValidActorName(who) then
-        return nil
+        return nil, nil, nil, nil, "roll_actor_ambiguous"
       end
       roll, minV, maxV = tonumber(roll), tonumber(minV), tonumber(maxV)
       if roll and minV and maxV then
@@ -904,7 +904,7 @@ local function parseRollLine(msg)
   if who2 and roll2 and min2 and max2 then
     who2 = normalizeWhitespace(stripColorAndTextures(who2))
     if not isValidActorName(who2) then
-      return nil
+      return nil, nil, nil, nil, "roll_actor_ambiguous"
     end
     roll2, min2, max2 = tonumber(roll2), tonumber(min2), tonumber(max2)
     if roll2 and min2 and max2 then
@@ -1660,9 +1660,9 @@ local function onSystemEvent(msg, lineID)
     return
   end
 
-  local who, roll, minV, maxV = parseRollLine(msg)
+  local who, roll, minV, maxV, parseErr = parseRollLine(msg)
   if not who or not roll or not minV or not maxV then
-    bumpDrop("roll_parse_fail")
+    bumpDrop(parseErr or "roll_parse_fail")
     return
   end
 
@@ -2546,6 +2546,16 @@ function DiceTracker.RunSelfTest()
   local beforeNonRoll = DiceTrackerDB.drop.total
   onSystemEvent("You have unlearned a spell.", 900050)
   assertEq("non_roll_no_drop", DiceTrackerDB.drop.total, beforeNonRoll, failures)
+
+  -- 3a2) Roll lines with non-deterministic actor names should drop as actor ambiguous.
+  local beforeBadActor = DiceTrackerDB.drop.total
+  local beforeBadActorReason = (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.roll_actor_ambiguous) or 0
+  local badActorMsg = safeFormatRoll(_G.RANDOM_ROLL_RESULT, "Bad Actor", 2, 1, 6)
+  if badActorMsg then
+    onSystemEvent(badActorMsg, 900051)
+  end
+  assertEq("bad_actor_drop_increment", DiceTrackerDB.drop.total, beforeBadActor + 1, failures)
+  assertEq("bad_actor_reason", (DiceTrackerDB.drop.reasons and DiceTrackerDB.drop.reasons.roll_actor_ambiguous) or 0, beforeBadActorReason + 1, failures)
 
   -- 3b) Ambiguous baseName pairing must drop and not consume any pending sessions
   openPendingToss("Player-DUPA", "Dup-RealmA", 90006, "Player-DUPA")
