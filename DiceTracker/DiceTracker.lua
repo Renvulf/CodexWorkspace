@@ -819,7 +819,7 @@ itemNameMatchesMessage = function(msg)
     return false
   end
   local cleaned = cleanMessage(msg):lower()
-  local needle = itemName:lower()
+  local needle = normalizeWhitespace(stripColorAndTextures(itemName)):lower()
   local s, e = cleaned:find(needle, 1, true)
   if not s or not e then return false end
   local prev = s > 1 and cleaned:sub(s - 1, s - 1) or ""
