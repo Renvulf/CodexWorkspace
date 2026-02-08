@@ -2072,7 +2072,7 @@ local function formatDebugOverlay(targetKey, combinedMeta, combinedProbs)
   local gw = fmtWeights(combinedMeta.global, db.global, "Weights(global)")
   if gw then line[#line + 1] = gw end
   if targetKey and targetKey ~= "GLOBAL" then
-    local am = db.actors.map[targetKey]
+    local am = actorMap and actorMap[targetKey] or nil
     local aw = fmtWeights(combinedMeta.actor, am, "Weights(actor)")
     if aw then line[#line + 1] = aw end
     line[#line + 1] = string.format("Actor shrink gate: %.2f  actorAdv: %.3f",
