@@ -1778,7 +1778,15 @@ local function computeEffectiveTarget()
     return "GLOBAL", "target-global"
   end
   if mode == "actor" and t.actor and t.actor ~= "" then
-    return t.actor, "actor"
+    local actorKey = t.actor
+    if actorKey == "GLOBAL" then
+      return "GLOBAL", "actor-global"
+    end
+    local map = db.actors and db.actors.map
+    if actorKey == selfActorKey() or (type(map) == "table" and map[actorKey]) then
+      return actorKey, "actor"
+    end
+    return "GLOBAL", "actor-global"
   end
 
   -- auto
@@ -2262,6 +2270,16 @@ function DiceTracker.RunSelfTest()
   RT.selfTestTargetKey = nil
   local targetFallbackKey = computeEffectiveTarget()
   assertEq("target_mode_fallback_global", targetFallbackKey, "GLOBAL", failures)
+  DiceTrackerDB.settings.target.mode = "auto"
+
+  -- 0c) Manual actor mode falls back to global when actor is missing.
+  DiceTrackerDB.settings.target.mode = "actor"
+  DiceTrackerDB.settings.target.actor = "Player-SELFTESTMISSING-0004"
+  local actorFallbackKey = computeEffectiveTarget()
+  assertEq("actor_mode_fallback_global", actorFallbackKey, "GLOBAL", failures)
+  DiceTrackerDB.settings.target.actor = selfActorKey()
+  local actorModeKey = computeEffectiveTarget()
+  assertEq("actor_mode_self", actorModeKey, selfActorKey(), failures)
   DiceTrackerDB.settings.target.mode = "auto"
 
   -- 1) Toss confirmation via hyperlink
