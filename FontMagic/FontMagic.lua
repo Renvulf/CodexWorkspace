@@ -492,7 +492,7 @@ if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatTog
 if FontMagicDB.applyToWorldText == nil then FontMagicDB.applyToWorldText = true end
 if FontMagicDB.applyToScrollingText == nil then FontMagicDB.applyToScrollingText = true end
 if type(FontMagicDB.scrollingTextOutlineMode) ~= "string" or FontMagicDB.scrollingTextOutlineMode == "" then
-    FontMagicDB.scrollingTextOutlineMode = "OUTLINE"
+    FontMagicDB.scrollingTextOutlineMode = ""
 end
 if FontMagicDB.scrollingTextMonochrome == nil then FontMagicDB.scrollingTextMonochrome = false end
 if type(FontMagicDB.scrollingTextShadowOffset) ~= "number" then FontMagicDB.scrollingTextShadowOffset = 1 end
@@ -3365,7 +3365,7 @@ BuildCombatOptionsUI = function()
         { text = "Outline", value = "OUTLINE" },
         { text = "Thick outline", value = "THICKOUTLINE" },
     }
-    CreateOptionDropdown(y, "Outline mode", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "OUTLINE", outlineChoices, function(val)
+    CreateOptionDropdown(y, "Outline mode", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "", outlineChoices, function(val)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextOutlineMode = val
         ApplySavedCombatFont()
@@ -3720,7 +3720,7 @@ local function ResetFontOnly()
     FontMagicDB.minimapHide  = keepHide
     FontMagicDB.applyToWorldText = true
     FontMagicDB.applyToScrollingText = true
-    FontMagicDB.scrollingTextOutlineMode = "OUTLINE"
+    FontMagicDB.scrollingTextOutlineMode = ""
     FontMagicDB.scrollingTextMonochrome = false
     FontMagicDB.scrollingTextShadowOffset = 1
 
