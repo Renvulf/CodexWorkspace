@@ -874,19 +874,25 @@ end
 local function RefreshPreviewRendering()
     if not preview then return end
 
+    local applies = FontMagicDB and FontMagicDB.applyToScrollingText
     local off = tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 0
     if preview.SetShadowOffset then
-        if off <= 0 then
-            pcall(preview.SetShadowOffset, preview, 0, 0)
+        if applies then
+            if off <= 0 then
+                pcall(preview.SetShadowOffset, preview, 0, 0)
+            else
+                pcall(preview.SetShadowOffset, preview, off, -off)
+            end
         else
-            pcall(preview.SetShadowOffset, preview, off, -off)
+            pcall(preview.SetShadowOffset, preview, 1, -1)
         end
     end
 
-    if FontMagicDB and FontMagicDB.applyToScrollingText and preview.GetFont and preview.SetFont then
+    if preview.GetFont and preview.SetFont then
         local pPath, pSize = preview:GetFont()
         if type(pPath) == "string" and pPath ~= "" and type(pSize) == "number" then
-            pcall(preview.SetFont, preview, pPath, pSize, BuildScrollingTextFontFlags())
+            local flags = applies and BuildScrollingTextFontFlags() or ""
+            pcall(preview.SetFont, preview, pPath, pSize, flags)
         end
     end
 
