@@ -4271,6 +4271,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             MigrateSavedFontKeys()
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
+            ApplyFloatingTextMotionSettings()
         end
 
         -- If Blizzard_CombatText loads after us, re-apply incoming overrides (if any).
