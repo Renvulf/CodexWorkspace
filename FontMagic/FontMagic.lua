@@ -502,32 +502,33 @@ if type(FontMagicDB.floatingTextFadeDuration) ~= "number" then FontMagicDB.float
 -- Migration: older versions stored combat overrides per-character. Move them into the account DB.
 do
     local migrated = false
-    if type(FontMagicDB.combatOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.combatOverrides) do
-            if FontMagicDB.combatOverrides[k] == nil then
-                FontMagicDB.combatOverrides[k] = v
+
+    local function MergeMissing(dest, src)
+        if type(dest) ~= "table" or type(src) ~= "table" then return false end
+        local changed = false
+        for k, v in pairs(src) do
+            if dest[k] == nil then
+                dest[k] = v
+                changed = true
             end
         end
-        FontMagicDB.combatOverrides = nil
-        migrated = true
+        return changed
     end
-    if type(FontMagicDB.extraCombatOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.extraCombatOverrides) do
-            if FontMagicDB.extraCombatOverrides[k] == nil then
-                FontMagicDB.extraCombatOverrides[k] = v
-            end
+
+    if type(FontMagicPCDB) == "table" then
+        if MergeMissing(FontMagicDB.combatOverrides, FontMagicPCDB.combatOverrides) then
+            migrated = true
         end
-        FontMagicDB.extraCombatOverrides = nil
-        migrated = true
-    end
-    if type(FontMagicDB.incomingOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.incomingOverrides) do
-            if FontMagicDB.incomingOverrides[k] == nil then
-                FontMagicDB.incomingOverrides[k] = v
-            end
+        if MergeMissing(FontMagicDB.extraCombatOverrides, FontMagicPCDB.extraCombatOverrides) then
+            migrated = true
         end
-        FontMagicDB.incomingOverrides = nil
-        migrated = true
+        if MergeMissing(FontMagicDB.incomingOverrides, FontMagicPCDB.incomingOverrides) then
+            migrated = true
+        end
+
+        FontMagicPCDB.combatOverrides = nil
+        FontMagicPCDB.extraCombatOverrides = nil
+        FontMagicPCDB.incomingOverrides = nil
     end
 
     -- If combat text was previously hidden by the old main checkbox (per-character override),
