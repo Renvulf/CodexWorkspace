@@ -3112,7 +3112,7 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     return cb
 end
 
-local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled)
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint)
     if enabled == nil then enabled = true end
 
     local title = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -3158,14 +3158,15 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
         if enabled then
             AttachTooltip(dd, label, tip)
         else
-            AttachTooltip(dd, label, tip .. "\n\nNot available on this client.")
+            AttachTooltip(dd, label, tip .. "\n\n" .. (disabledHint or "Not available on this client."))
         end
     end
     table.insert(combatWidgets, dd)
     return dd
 end
 
-local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled)
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint)
+    if enabled == nil then enabled = true end
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
     fs:SetText(label)
@@ -3210,7 +3211,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         if tip then AttachTooltip(s, label, tip) end
     else
         s:Disable()
-        if tip then AttachTooltip(s, label, tip .. "\n\nNot available on this client.") end
+        if tip then AttachTooltip(s, label, tip .. "\n\n" .. (disabledHint or "Not available on this client.")) end
     end
 
     table.insert(combatWidgets, valText)
@@ -3363,7 +3364,7 @@ BuildCombatOptionsUI = function()
         FontMagicDB.scrollingTextOutlineMode = val
         ApplySavedCombatFont()
         RefreshPreviewRendering()
-    end, "Choose the font edge style for scrolling combat text.", FontMagicDB and FontMagicDB.applyToScrollingText)
+    end, "Choose the font edge style for scrolling combat text.", FontMagicDB and FontMagicDB.applyToScrollingText, "Enable 'Apply to scrolling combat text' to change this setting.")
 
     local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
@@ -3384,7 +3385,8 @@ BuildCombatOptionsUI = function()
             RefreshPreviewRendering()
         end,
         "Sets shadow depth for scrolling text. A value of 0 disables the shadow.",
-        FontMagicDB and FontMagicDB.applyToScrollingText
+        FontMagicDB and FontMagicDB.applyToScrollingText,
+        "Enable 'Apply to scrolling combat text' to change this setting."
     )
 
     y = y - 130
