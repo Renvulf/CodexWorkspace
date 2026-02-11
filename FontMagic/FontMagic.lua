@@ -3111,10 +3111,15 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     return cb
 end
 
-local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip)
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled)
+    if enabled == nil then enabled = true end
+
     local title = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
     title:SetText(label)
+    if not enabled then
+        title:SetTextColor(0.5, 0.5, 0.5)
+    end
     table.insert(combatWidgets, title)
 
     local dd = CreateFrame("Frame", nil, combatContent, "UIDropDownMenuTemplate")
@@ -3127,7 +3132,9 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
             local info = UIDropDownMenu_CreateInfo()
             info.text = infoData.text
             info.checked = (selectedValue == infoData.value)
+            info.disabled = not enabled
             info.func = function()
+                if not enabled then return end
                 onSelect(infoData.value)
                 BuildCombatOptionsUI()
             end
@@ -3143,7 +3150,16 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
         end
     end
     UIDropDownMenu_SetText(dd, selectedText)
-    if tip then AttachTooltip(dd, label, tip) end
+    if not enabled and type(UIDropDownMenu_DisableDropDown) == "function" then
+        pcall(UIDropDownMenu_DisableDropDown, dd)
+    end
+    if tip then
+        if enabled then
+            AttachTooltip(dd, label, tip)
+        else
+            AttachTooltip(dd, label, tip .. "\n\nNot available on this client.")
+        end
+    end
     table.insert(combatWidgets, dd)
     return dd
 end
@@ -3322,6 +3338,7 @@ BuildCombatOptionsUI = function()
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.applyToWorldText = self:GetChecked() and true or false
         ApplySavedCombatFont()
+        BuildCombatOptionsUI()
     end, "Controls whether FontMagic applies your selected font to 3D damage/heal numbers above units.")
 
     CreateOptionCheckbox(1, y, "Apply to scrolling combat text", applyScrolling, function(self)
@@ -3329,6 +3346,7 @@ BuildCombatOptionsUI = function()
         FontMagicDB.applyToScrollingText = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
+        BuildCombatOptionsUI()
     end, "Controls whether FontMagic updates Blizzard scrolling combat text font objects.")
 
     y = y - CHECK_ROW_H - 10
@@ -3344,14 +3362,17 @@ BuildCombatOptionsUI = function()
         FontMagicDB.scrollingTextOutlineMode = val
         ApplySavedCombatFont()
         RefreshPreviewRendering()
-    end, "Choose the font edge style for scrolling combat text.")
+    end, "Choose the font edge style for scrolling combat text.", FontMagicDB and FontMagicDB.applyToScrollingText)
 
-    CreateOptionCheckbox(1, y - 34, "Monochrome", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
+    local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextMonochrome = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
     end, "Uses monochrome rendering for scrolling text. Helpful for crisp pixel-style fonts.")
+    if not (FontMagicDB and FontMagicDB.applyToScrollingText) and monoCB and monoCB.Disable then
+        pcall(monoCB.Disable, monoCB)
+    end
 
     CreateOptionSlider(y - 64, "Shadow", "Shadow offset", 0, 4, 1,
         tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 1,
@@ -3411,12 +3432,19 @@ BuildCombatOptionsUI = function()
     y = AddHeader("Floating text motion", y)
     local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
     local fadeName = ResolveCVarName({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
-    local motionSupported = (gravityName ~= nil and fadeName ~= nil)
+    local gravitySupported = (gravityName ~= nil)
+    local fadeSupported = (fadeName ~= nil)
 
-    if not motionSupported then
+    if not gravitySupported or not fadeSupported then
         local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
-        unavailable:SetText("Not available on this client.")
+        if not gravitySupported and not fadeSupported then
+            unavailable:SetText("Not available on this client.")
+        elseif not gravitySupported then
+            unavailable:SetText("Gravity is not available on this client.")
+        else
+            unavailable:SetText("Fade duration is not available on this client.")
+        end
         unavailable:SetTextColor(0.7, 0.7, 0.7)
         table.insert(combatWidgets, unavailable)
         y = y - 20
@@ -3430,7 +3458,7 @@ BuildCombatOptionsUI = function()
             ApplyFloatingTextMotionSettings()
         end,
         "Controls the travel curve for floating world combat numbers.",
-        motionSupported
+        gravitySupported
     )
 
     CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
@@ -3441,7 +3469,7 @@ BuildCombatOptionsUI = function()
             ApplyFloatingTextMotionSettings()
         end,
         "Controls how long floating world combat numbers remain visible.",
-        motionSupported
+        fadeSupported
     )
 
     y = y - 120
