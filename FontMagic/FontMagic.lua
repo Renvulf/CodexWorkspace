@@ -488,6 +488,17 @@ if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraComba
 if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
 
+-- Combat font targeting/rendering defaults.
+if FontMagicDB.applyToWorldText == nil then FontMagicDB.applyToWorldText = true end
+if FontMagicDB.applyToScrollingText == nil then FontMagicDB.applyToScrollingText = true end
+if type(FontMagicDB.scrollingTextOutlineMode) ~= "string" or FontMagicDB.scrollingTextOutlineMode == "" then
+    FontMagicDB.scrollingTextOutlineMode = "OUTLINE"
+end
+if FontMagicDB.scrollingTextMonochrome == nil then FontMagicDB.scrollingTextMonochrome = false end
+if type(FontMagicDB.scrollingTextShadowOffset) ~= "number" then FontMagicDB.scrollingTextShadowOffset = 1 end
+if type(FontMagicDB.floatingTextGravity) ~= "number" then FontMagicDB.floatingTextGravity = 0.5 end
+if type(FontMagicDB.floatingTextFadeDuration) ~= "number" then FontMagicDB.floatingTextFadeDuration = 1.0 end
+
 -- Migration: older versions stored combat overrides per-character. Move them into the account DB.
 do
     local migrated = false
@@ -736,42 +747,164 @@ end
 
 -- by updating the globals and
 -- any common FontObjects that already exist in the current client.
+local SCROLLING_TEXT_FONT_OBJECTS = {
+    "CombatTextFont", "CombatTextFontOutline", "DamageFont", "DamageFontOutline",
+    "CombatTextFontNormal", "CombatTextFontSmall", "DamageTextFont", "DamageTextFontOutline",
+}
+
+local defaultScrollingTextFonts = {}
+local preview, editBox, previewHeaderFS
+local ForcePreviewTextRedraw
+
+local function CaptureDefaultScrollingTextFonts()
+    for _, name in ipairs(SCROLLING_TEXT_FONT_OBJECTS) do
+        local obj = _G and _G[name]
+        if obj and type(obj.GetFont) == "function" and defaultScrollingTextFonts[name] == nil then
+            local fPath, fSize, fFlags = obj:GetFont()
+            local ox, oy = 1, -1
+            if type(obj.GetShadowOffset) == "function" then
+                local sx, sy = obj:GetShadowOffset()
+                if sx ~= nil and sy ~= nil then
+                    ox, oy = sx, sy
+                end
+            end
+            defaultScrollingTextFonts[name] = {
+                path = fPath,
+                size = fSize,
+                flags = fFlags,
+                shadowX = ox,
+                shadowY = oy,
+            }
+        end
+    end
+end
+
+local function BuildScrollingTextFontFlags()
+    if not (FontMagicDB and FontMagicDB.applyToScrollingText) then
+        return ""
+    end
+
+    local parts = {}
+    local outline = FontMagicDB.scrollingTextOutlineMode
+    if outline == "OUTLINE" or outline == "THICKOUTLINE" then
+        table.insert(parts, outline)
+    end
+    if FontMagicDB.scrollingTextMonochrome then
+        table.insert(parts, "MONOCHROME")
+    end
+    return table.concat(parts, ",")
+end
+
+local function RestoreDefaultScrollingTextFonts()
+    CaptureDefaultScrollingTextFonts()
+    for _, name in ipairs(SCROLLING_TEXT_FONT_OBJECTS) do
+        local obj = _G and _G[name]
+        local state = defaultScrollingTextFonts[name]
+        if obj and state and type(obj.SetFont) == "function" and type(state.path) == "string" and state.path ~= "" then
+            pcall(obj.SetFont, obj, state.path, state.size or 25, state.flags or "")
+            if type(obj.SetShadowOffset) == "function" then
+                pcall(obj.SetShadowOffset, obj, state.shadowX or 1, state.shadowY or -1)
+            end
+        end
+    end
+end
+
+local function ApplyWorldTextFontPath(path)
+    local effective = path
+    if not (FontMagicDB and FontMagicDB.applyToWorldText) then
+        effective = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH
+    end
+
+    if type(effective) == "string" and effective ~= "" then
+        _G.DAMAGE_TEXT_FONT = effective
+        _G.COMBAT_TEXT_FONT = effective
+    end
+end
+
+local function ApplyScrollingTextFontPath(path)
+    CaptureDefaultScrollingTextFonts()
+    if not (FontMagicDB and FontMagicDB.applyToScrollingText) then
+        RestoreDefaultScrollingTextFonts()
+        return
+    end
+
+    if type(path) ~= "string" or path == "" then
+        return
+    end
+
+    local flags = BuildScrollingTextFontFlags()
+    local shadowOffset = tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 0
+    for _, name in ipairs(SCROLLING_TEXT_FONT_OBJECTS) do
+        local obj = _G and _G[name]
+        local state = defaultScrollingTextFonts[name]
+        if obj and type(obj.SetFont) == "function" then
+            local size = (state and state.size) or 25
+            pcall(obj.SetFont, obj, path, size, flags)
+            if type(obj.SetShadowOffset) == "function" then
+                if shadowOffset <= 0 then
+                    pcall(obj.SetShadowOffset, obj, 0, 0)
+                else
+                    pcall(obj.SetShadowOffset, obj, shadowOffset, -shadowOffset)
+                end
+            end
+        end
+    end
+end
+
 local function ApplyCombatTextFontPath(path)
     if type(path) ~= "string" or path == "" then return end
+    ApplyWorldTextFontPath(path)
+    ApplyScrollingTextFontPath(path)
+end
 
-    -- Set globals unconditionally. In some clients these may not be initialized yet
-    -- when our file first runs; assigning now ensures Blizzard uses our path once
-    -- combat text initializes.
-    _G.DAMAGE_TEXT_FONT = path
-    _G.COMBAT_TEXT_FONT  = path
+local function ApplyFloatingTextMotionSettings()
+    local gravityName, gravityCt = ResolveConsoleSetting({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+    local fadeName, fadeCt = ResolveConsoleSetting({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
 
-    local function TrySetFont(obj, size, flags)
-        if obj and type(obj.SetFont) == "function" then
-            pcall(obj.SetFont, obj, path, size, flags)
+    if gravityName and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
+        ApplyConsoleSetting(gravityName, gravityCt, string.format("%.2f", FontMagicDB.floatingTextGravity))
+    end
+    if fadeName and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
+        ApplyConsoleSetting(fadeName, fadeCt, string.format("%.2f", FontMagicDB.floatingTextFadeDuration))
+    end
+end
+
+local function RefreshPreviewRendering()
+    if not preview then return end
+
+    local off = tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 0
+    if preview.SetShadowOffset then
+        if off <= 0 then
+            pcall(preview.SetShadowOffset, preview, 0, 0)
+        else
+            pcall(preview.SetShadowOffset, preview, off, -off)
         end
     end
 
-    -- A small best-effort list; these vary by client/era.
-    TrySetFont(_G and _G.CombatTextFont,         25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontOutline,  25, "OUTLINE")
-    TrySetFont(_G and _G.DamageFont,             25, "OUTLINE")
-    TrySetFont(_G and _G.DamageFontOutline,      25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontNormal,   25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontSmall,    20, "OUTLINE")
-    TrySetFont(_G and _G.DamageTextFont,         25, "OUTLINE")
-    TrySetFont(_G and _G.DamageTextFontOutline,  25, "OUTLINE")
+    if FontMagicDB and FontMagicDB.applyToScrollingText and preview.GetFont and preview.SetFont then
+        local pPath, pSize = preview:GetFont()
+        if type(pPath) == "string" and pPath ~= "" and type(pSize) == "number" then
+            pcall(preview.SetFont, preview, pPath, pSize, BuildScrollingTextFontFlags())
+        end
+    end
+
+    ForcePreviewTextRedraw()
 end
 
 local function ApplySavedCombatFont()
     if type(FontMagicDB) ~= "table" then return end
     local key = FontMagicDB.selectedFont
-    if type(key) ~= "string" or key == "" then return end
+    if type(key) ~= "string" or key == "" then
+        local def = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH or "Fonts\\FRIZQT__.TTF"
+        ApplyCombatTextFontPath(def)
+        return
+    end
 
     local path, grp, fname = ResolveFontPathFromKey(key)
     if not path then
         -- Saved selection no longer exists; fall back to Default safely.
         FontMagicDB.selectedFont = ""
-        local def = GetBlizzardDefaultCombatTextFont and GetBlizzardDefaultCombatTextFont() or DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or "Fonts\FRIZQT__.TTF"
+        local def = GetBlizzardDefaultCombatTextFont and GetBlizzardDefaultCombatTextFont() or DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
         ApplyCombatTextFontPath(def)
         return
     end
@@ -954,10 +1087,7 @@ end
 
 -- 4) FONT DROPDOWNS ---------------------------------------------------------
 local dropdowns = {}
-local preview
-local editBox
 local mainShowCombatTextCB
-local previewHeaderFS
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
 
@@ -1457,7 +1587,7 @@ end
 
 -- Force a redraw of the preview text (some clients won't repaint an unchanged string
 -- immediately after SetFont/SetFontObject until the text changes).
-local function ForcePreviewTextRedraw()
+ForcePreviewTextRedraw = function()
     if not (preview and type(preview.SetText) == "function") then return end
 
     local txt = ""
@@ -1658,6 +1788,7 @@ SetPreviewFont = function(fontObj, path)
             end
         end)
 
+        RefreshPreviewRendering()
         return
     end
 
@@ -1668,6 +1799,7 @@ SetPreviewFont = function(fontObj, path)
             ForcePreviewTextRedraw()
         end
     end
+    RefreshPreviewRendering()
 end
 
 
@@ -2935,6 +3067,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local combatWidgets = {}
+local BuildCombatOptionsUI
 
 local function ClearCombatWidgets()
     for _, w in ipairs(combatWidgets) do
@@ -2975,6 +3108,96 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     if tip then AttachTooltip(cb, label, tip) end
     table.insert(combatWidgets, cb)
     return cb
+end
+
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip)
+    local title = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    title:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    title:SetText(label)
+    table.insert(combatWidgets, title)
+
+    local dd = CreateFrame("Frame", nil, combatContent, "UIDropDownMenuTemplate")
+    dd:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -14, -4)
+    UIDropDownMenu_SetWidth(dd, CB_COL_W * 2 + CHECK_COL_GAP - 48)
+    UIDropDownMenu_Initialize(dd, function(self, level)
+        level = level or 1
+        if level ~= 1 then return end
+        for _, infoData in ipairs(values) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = infoData.text
+            info.checked = (selectedValue == infoData.value)
+            info.func = function()
+                onSelect(infoData.value)
+                BuildCombatOptionsUI()
+            end
+            SafeAddDropDownButton(info, level)
+        end
+    end)
+
+    local selectedText = values[1] and values[1].text or ""
+    for _, infoData in ipairs(values) do
+        if infoData.value == selectedValue then
+            selectedText = infoData.text
+            break
+        end
+    end
+    UIDropDownMenu_SetText(dd, selectedText)
+    if tip then AttachTooltip(dd, label, tip) end
+    table.insert(combatWidgets, dd)
+    return dd
+end
+
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled)
+    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    fs:SetText(label)
+    if not enabled then
+        fs:SetTextColor(0.5, 0.5, 0.5)
+    end
+    table.insert(combatWidgets, fs)
+
+    local valText = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
+    table.insert(combatWidgets, valText)
+
+    local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
+    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -6)
+    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 10)
+    s:SetMinMaxValues(minVal, maxVal)
+    s:SetValueStep(step)
+    s:SetObeyStepOnDrag(true)
+    _G[s:GetName() .. "Low"]:SetText(string.format("%.2f", minVal))
+    _G[s:GetName() .. "High"]:SetText(string.format("%.2f", maxVal))
+    local t = s.Text or _G[s:GetName() .. "Text"]
+    if t and t.Hide then t:Hide() end
+
+    local function setVal(v)
+        local rounded = math.floor((v / step) + 0.5) * step
+        rounded = math.max(minVal, math.min(maxVal, rounded))
+        valText:SetText(string.format("%.2f", rounded))
+        return rounded
+    end
+
+    s:SetScript("OnValueChanged", function(_, v)
+        if not enabled then return end
+        local rounded = setVal(v)
+        onChange(rounded)
+    end)
+
+    s:SetValue(value)
+    setVal(value)
+
+    if enabled then
+        s:Enable()
+        if tip then AttachTooltip(s, label, tip) end
+    else
+        s:Disable()
+        if tip then AttachTooltip(s, label, tip .. "\n\nNot available on this client.") end
+    end
+
+    table.insert(combatWidgets, valText)
+    table.insert(combatWidgets, s)
+    return s
 end
 
 CollectExtraBoolCombatTextCVars = function()
@@ -3032,7 +3255,7 @@ CollectExtraBoolCombatTextCVars = function()
     return extras
 end
 
-local function BuildCombatOptionsUI()
+BuildCombatOptionsUI = function()
     ClearCombatWidgets()
 
     local y = 0
@@ -3090,6 +3313,59 @@ local function BuildCombatOptionsUI()
 
     y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
 
+    y = AddHeader("Font application targets", y)
+    local applyWorld = FontMagicDB and FontMagicDB.applyToWorldText and true or false
+    local applyScrolling = FontMagicDB and FontMagicDB.applyToScrollingText and true or false
+
+    CreateOptionCheckbox(0, y, "Apply to floating numbers", applyWorld, function(self)
+        FontMagicDB = FontMagicDB or {}
+        FontMagicDB.applyToWorldText = self:GetChecked() and true or false
+        ApplySavedCombatFont()
+    end, "Controls whether FontMagic applies your selected font to 3D damage/heal numbers above units.")
+
+    CreateOptionCheckbox(1, y, "Apply to scrolling combat text", applyScrolling, function(self)
+        FontMagicDB = FontMagicDB or {}
+        FontMagicDB.applyToScrollingText = self:GetChecked() and true or false
+        ApplySavedCombatFont()
+        RefreshPreviewRendering()
+    end, "Controls whether FontMagic updates Blizzard scrolling combat text font objects.")
+
+    y = y - CHECK_ROW_H - 10
+
+    y = AddHeader("Text rendering", y)
+    local outlineChoices = {
+        { text = "None", value = "" },
+        { text = "Outline", value = "OUTLINE" },
+        { text = "Thick outline", value = "THICKOUTLINE" },
+    }
+    CreateOptionDropdown(y, "Outline mode", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "OUTLINE", outlineChoices, function(val)
+        FontMagicDB = FontMagicDB or {}
+        FontMagicDB.scrollingTextOutlineMode = val
+        ApplySavedCombatFont()
+        RefreshPreviewRendering()
+    end, "Choose the font edge style for scrolling combat text.")
+
+    CreateOptionCheckbox(1, y - 34, "Monochrome", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
+        FontMagicDB = FontMagicDB or {}
+        FontMagicDB.scrollingTextMonochrome = self:GetChecked() and true or false
+        ApplySavedCombatFont()
+        RefreshPreviewRendering()
+    end, "Uses monochrome rendering for scrolling text. Helpful for crisp pixel-style fonts.")
+
+    CreateOptionSlider(y - 64, "Shadow", "Shadow offset", 0, 4, 1,
+        tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 1,
+        function(v)
+            FontMagicDB = FontMagicDB or {}
+            FontMagicDB.scrollingTextShadowOffset = v
+            ApplySavedCombatFont()
+            RefreshPreviewRendering()
+        end,
+        "Sets shadow depth for scrolling text. A value of 0 disables the shadow.",
+        FontMagicDB and FontMagicDB.applyToScrollingText
+    )
+
+    y = y - 130
+
     if EnsureIncomingReady() then
         y = AddHeader("Incoming", y)
 
@@ -3131,16 +3407,53 @@ local function BuildCombatOptionsUI()
         y = y - CHECK_ROW_H - 10
     end
 
+    y = AddHeader("Floating text motion", y)
+    local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+    local fadeName = ResolveCVarName({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+    local motionSupported = (gravityName ~= nil and fadeName ~= nil)
+
+    if not motionSupported then
+        local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+        unavailable:SetText("Not available on this client.")
+        unavailable:SetTextColor(0.7, 0.7, 0.7)
+        table.insert(combatWidgets, unavailable)
+        y = y - 20
+    end
+
+    CreateOptionSlider(y, "Gravity", "Gravity", 0.00, 2.00, 0.05,
+        tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 0.5,
+        function(v)
+            FontMagicDB = FontMagicDB or {}
+            FontMagicDB.floatingTextGravity = v
+            ApplyFloatingTextMotionSettings()
+        end,
+        "Controls the travel curve for floating world combat numbers.",
+        motionSupported
+    )
+
+    CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
+        tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
+        function(v)
+            FontMagicDB = FontMagicDB or {}
+            FontMagicDB.floatingTextFadeDuration = v
+            ApplyFloatingTextMotionSettings()
+        end,
+        "Controls how long floating world combat numbers remain visible.",
+        motionSupported
+    )
+
+    y = y - 120
+
     local extras = CollectExtraBoolCombatTextCVars()
     if #extras > 0 then
         local showExtras = (FontMagicDB and FontMagicDB.showExtraCombatToggles) and true or false
 
-        -- Keep the panel tidy by default. Users can opt in to showing extra/experimental toggles.
         local toggle = CreateOptionCheckbox(0, y, "Show extra combat text toggles", showExtras, function(self)
             FontMagicDB = FontMagicDB or {}
             FontMagicDB.showExtraCombatToggles = self:GetChecked() and true or false
             BuildCombatOptionsUI()
-        end, "Reveals additional, less common combat text options detected on this client.\n\nThese vary by WoW version and may do nothing in some clients. If you\'re unsure, leave this off.")
+        end, "Reveals additional, less common combat text options detected on this client.\n\nThese vary by WoW version and may do nothing in some clients. If you're unsure, leave this off.")
 
         if masterOff and toggle and toggle.Disable then pcall(toggle.Disable, toggle) end
 
@@ -3177,7 +3490,6 @@ local function BuildCombatOptionsUI()
         end
     end
 
--- UI / layering helpers
     y = AddHeader("UI (Advanced)", y)
     local above = (FontMagicDB and FontMagicDB.combatTextAboveNameplates) and true or false
     CreateOptionCheckbox(0, y, "Combat text in front of nameplates", above, function(self)
@@ -3192,6 +3504,7 @@ local function BuildCombatOptionsUI()
     local needed = -y + 20
     combatContent:SetHeight(math.max(needed, combatScroll:GetHeight()))
 end
+
 
 local function RefreshCombatTextCVars()
     if combatPanel and combatPanel:IsShown() then
@@ -3367,6 +3680,11 @@ local function ResetFontOnly()
     FontMagicDB.selectedGroup = nil
     FontMagicDB.minimapAngle = keepAngle
     FontMagicDB.minimapHide  = keepHide
+    FontMagicDB.applyToWorldText = true
+    FontMagicDB.applyToScrollingText = true
+    FontMagicDB.scrollingTextOutlineMode = "OUTLINE"
+    FontMagicDB.scrollingTextMonochrome = false
+    FontMagicDB.scrollingTextShadowOffset = 1
 
     FontMagicPCDB = FontMagicPCDB or {}
     FontMagicPCDB.selectedGroup = nil
@@ -3411,6 +3729,8 @@ local function ResetFontOnly()
 
     -- Reset the actual combat text font back to Blizzard's default for this client.
     ApplyCombatTextFontPath(defaultPath)
+    RefreshPreviewRendering()
+    RefreshCombatTextCVars()
 end
 
 local function ResetCombatOptionsOnly()
@@ -3486,6 +3806,36 @@ local function ResetCombatOptionsOnly()
                 end
             end
         end
+    end
+
+    -- Reset floating text motion CVars to client defaults.
+    do
+        local function ResetNumericCVarToDefault(candidates)
+            local name, ct = ResolveConsoleSetting(candidates)
+            if not name then return nil end
+            if type(C_CVar) == "table" and type(C_CVar.ResetCVar) == "function" and ct == 0 then
+                pcall(C_CVar.ResetCVar, name)
+            else
+                local d
+                if type(C_CVar) == "table" and type(C_CVar.GetCVarDefault) == "function" then
+                    local ok, v = pcall(C_CVar.GetCVarDefault, name)
+                    if ok then d = v end
+                end
+                if d == nil and type(GetCVarDefault) == "function" then
+                    local ok, v = pcall(GetCVarDefault, name)
+                    if ok then d = v end
+                end
+                if d ~= nil then
+                    ApplyConsoleSetting(name, ct, d)
+                end
+            end
+            return tonumber(GetCVarString(name))
+        end
+
+        local g = ResetNumericCVarToDefault({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+        local f = ResetNumericCVarToDefault({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+        if g ~= nil then FontMagicDB.floatingTextGravity = g end
+        if f ~= nil then FontMagicDB.floatingTextFadeDuration = f end
     end
 
     -- Restore Blizzard's default incoming damage/healing tables (where supported).
@@ -3838,6 +4188,7 @@ end
 local function ApplyAllSavedOverrides()
     ApplyCombatOverrides()
     ApplyIncomingOverrides()
+    ApplyFloatingTextMotionSettings()
 
     -- If combat text was hidden via the master toggle, keep it hidden across relogs.
     if FontMagicDB and FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
