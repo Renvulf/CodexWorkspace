@@ -751,7 +751,7 @@ end
 local SCROLLING_TEXT_FONT_OBJECTS = {
     "CombatTextFont", "CombatTextFontOutline", "DamageFont", "DamageFontOutline",
     "CombatTextFontNormal", "CombatTextFontSmall", "DamageTextFont", "DamageTextFontOutline",
-    "DamageNumberFont", "CombatDamageFont", "CombatHealingAbsorbGlowFont",
+    "DamageNumberFont", "CombatDamageFont", "CombatHealingAbsorbGlowFont", "WorldFont",
 }
 
 local defaultScrollingTextFonts = {}
