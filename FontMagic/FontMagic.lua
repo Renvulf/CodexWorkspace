@@ -2308,7 +2308,10 @@ local function DisplayNameForFont(fname)
     return __fmShortenFontLabel(label)
 end
 
-
+local function GetCustomFontsInstallHint()
+    local prettyPath = tostring(CUSTOM_PATH or "Interface\\AddOns\\FontMagicCustomFonts\\Custom\\")
+    return "Install " .. CUSTOM_ADDON .. ", add .ttf/.otf files in\n" .. prettyPath .. "\nthen /reload."
+end
 
 local lastDropdown
 for idx, grp in ipairs(order) do
@@ -2356,7 +2359,7 @@ for idx, grp in ipairs(order) do
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText("Custom fonts are provided by the optional FontMagicCustomFonts addon.")
                 GameTooltip:AddLine("", 1, 1, 1)
-                GameTooltip:AddLine("Install FontMagicCustomFonts, place .ttf/.otf files in its Custom folder, then reload your UI.", 0.9, 0.9, 0.9, true)
+                GameTooltip:AddLine(GetCustomFontsInstallHint(), 0.9, 0.9, 0.9, true)
                 GameTooltip:Show()
             end
         end)
@@ -2467,7 +2470,7 @@ for idx, grp in ipairs(order) do
 
             if grp == "Custom" and not hasCustomFonts then
                 local hint = UIDropDownMenu_CreateInfo()
-                hint.text = "Install the optional addon, add fonts to its Custom folder, then /reload."
+                hint.text = GetCustomFontsInstallHint()
                 hint.disabled = true
                 SafeAddDropDownButton(hint, level)
             end
@@ -2479,6 +2482,14 @@ for idx, grp in ipairs(order) do
                 __fmClearMenuButtonHoverPreview(mb)
                 if mb.__fmStar then
                     UpdateFavoriteStar(mb, nil)
+                end
+            end
+
+            local mb2 = GetDropDownListButton(level, buttonIndex + 2)
+            if mb2 then
+                __fmClearMenuButtonHoverPreview(mb2)
+                if mb2.__fmStar then
+                    UpdateFavoriteStar(mb2, nil)
                 end
             end
         end
@@ -3685,10 +3696,20 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     end
 
     local settingValue = false
+    local pendingCommitValue
+    local isDragging = false
+
+    local function commitValue(v)
+        local rounded = setVal(v)
+        pendingCommitValue = rounded
+        onChange(rounded)
+        return rounded
+    end
 
     s:SetScript("OnValueChanged", function(self, v)
         if not enabled then return end
         local rounded = setVal(v)
+        pendingCommitValue = rounded
         if not settingValue and math.abs((tonumber(v) or rounded) - rounded) > 0.00001 then
             settingValue = true
             self:SetValue(rounded)
@@ -3696,17 +3717,36 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         end
         if liveApply then
             onChange(rounded)
+        elseif not isDragging then
+            -- Keyboard/controller adjustments do not fire OnMouseUp.
+            onChange(rounded)
         end
     end)
 
     -- Explicitly enable mouse interaction and commit a snapped value after drag.
     -- This keeps sliders responsive while ensuring exact stepped persistence.
     s:EnableMouse(true)
+    s:SetScript("OnMouseDown", function()
+        if not enabled then return end
+        isDragging = true
+    end)
     s:SetScript("OnMouseUp", function(self)
         if not enabled then return end
-        local rounded = setVal(self:GetValue())
+        isDragging = false
+        local rounded = commitValue(self:GetValue())
         self:SetValue(rounded)
+    end)
+
+    s:SetScript("OnHide", function(self)
+        if not enabled or liveApply then return end
+        isDragging = false
+        if pendingCommitValue == nil then return end
+        local rounded = SnapSliderToStep(pendingCommitValue, minVal, maxVal, step)
+        pendingCommitValue = nil
         onChange(rounded)
+        settingValue = true
+        self:SetValue(rounded)
+        settingValue = false
     end)
 
     local initial = setVal(value)
