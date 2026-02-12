@@ -2200,7 +2200,13 @@ for idx, grp in ipairs(order) do
         end
         if not added then
             local info = UIDropDownMenu_CreateInfo()
-            info.text = (grp == "Favorites") and "No favorites yet" or "No font detected"
+            if grp == "Favorites" then
+                info.text = "No favorites yet"
+            elseif grp == "Custom" and not hasCustomFonts then
+                info.text = "No custom fonts found (install FontMagicCustomFonts)"
+            else
+                info.text = "No font detected"
+            end
             info.disabled = true
             SafeAddDropDownButton(info, level)
 
@@ -2304,7 +2310,7 @@ slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -10)
 
 local function UpdateScale(val)
     if not scaleSupported then return end
-    val = math.floor(val * 10 + 0.5) / 10
+    val = SnapSliderToStep(val, 0.5, 5.0, 0.1)
     ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
     scaleValue:SetText(string.format("%.1f", val))
 end
@@ -2316,16 +2322,28 @@ local function RefreshScaleControl()
     if scaleSupported then
         slider:SetMinMaxValues(0.5, 5.0)
         slider:SetValueStep(0.1)
-        slider:SetObeyStepOnDrag(true)
-        _G[slider:GetName() .. "Low"]:SetText("0.5")
-        _G[slider:GetName() .. "High"]:SetText("5.0")
+        slider:SetObeyStepOnDrag(false)
+        local low = _G[slider:GetName() .. "Low"]
+        local high = _G[slider:GetName() .. "High"]
+        if low then low:SetText("0.5") end
+        if high then high:SetText("5.0") end
         slider:Enable()
         scaleLabel:SetTextColor(1, 1, 1)
         local currentScale = tonumber(scaleCVarValue)
             or tonumber(GetCVarString(scaleCVar)) or 1.0
-        slider:SetValue(currentScale)
-        scaleValue:SetText(string.format("%.1f", currentScale))
-        slider:SetScript("OnValueChanged", function(self, val) UpdateScale(val) end)
+        local snappedScale = SnapSliderToStep(currentScale, 0.5, 5.0, 0.1)
+        slider:SetValue(snappedScale)
+        scaleValue:SetText(string.format("%.1f", snappedScale))
+        slider:SetScript("OnValueChanged", function(self, val)
+            local snapped = SnapSliderToStep(val, 0.5, 5.0, 0.1)
+            scaleValue:SetText(string.format("%.1f", snapped))
+            UpdateScale(snapped)
+        end)
+        slider:SetScript("OnMouseUp", function(self)
+            local snapped = SnapSliderToStep(self:GetValue(), 0.5, 5.0, 0.1)
+            self:SetValue(snapped)
+            UpdateScale(snapped)
+        end)
         slider:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine("Drag to adjust combat text size", 1, 1, 1)
@@ -2334,10 +2352,13 @@ local function RefreshScaleControl()
     else
         slider:Disable()
         scaleLabel:SetTextColor(0.5, 0.5, 0.5)
-        _G[slider:GetName() .. "Low"]:SetText("")
-        _G[slider:GetName() .. "High"]:SetText("")
+        local low = _G[slider:GetName() .. "Low"]
+        local high = _G[slider:GetName() .. "High"]
+        if low then low:SetText("") end
+        if high then high:SetText("") end
         scaleValue:SetText("|cff888888N/A|r")
         slider:SetScript("OnValueChanged", nil)
+        slider:SetScript("OnMouseUp", nil)
         slider:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText("Not available in this version of WoW", nil, nil, nil, nil, true)
@@ -3363,11 +3384,43 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     local t = s.Text or _G[s:GetName() .. "Text"]
     if t and t.Hide then t:Hide() end
 
-    local function setVal(v)
-        local rounded = math.floor((v / step) + 0.5) * step
+    local decimals = 0
+    do
+        local s = tostring(step or "")
+        local frac = s:match("%.(%d+)")
+        if frac then
+            decimals = #frac
+        end
+        if decimals < 0 then decimals = 0 end
+        if decimals > 4 then decimals = 4 end
+    end
+
+    local fmt = "%0." .. tostring(decimals) .. "f"
+
+    local function snapSliderValue(v)
+        if type(v) ~= "number" then
+            v = tonumber(v) or minVal
+        end
+
+        -- Snap near endpoints first so min/max remain exactly reachable even
+        -- when floating-point drift occurs during drag updates.
+        local epsilon = (step or 0) * 0.5
+        if v <= (minVal + epsilon) then
+            return minVal
+        end
+        if v >= (maxVal - epsilon) then
+            return maxVal
+        end
+
+        local rounded = math.floor(((v - minVal) / step) + 0.5) * step + minVal
         rounded = math.max(minVal, math.min(maxVal, rounded))
-        valText:SetText(string.format("%.2f", rounded))
         return rounded
+    end
+
+    local function setVal(v)
+        local snapped = snapSliderValue(v)
+        valText:SetText(string.format(fmt, snapped))
+        return snapped
     end
 
     s:SetScript("OnValueChanged", function(_, v)
@@ -3402,6 +3455,30 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     table.insert(combatWidgets, valText)
     table.insert(combatWidgets, s)
     return s
+end
+
+-- Slider snapping helper used by both the main combat-text scale slider and
+-- floating-text motion sliders. This keeps endpoint behavior consistent across
+-- clients where floating-point drag updates can otherwise miss min/max labels.
+local function SnapSliderToStep(v, minVal, maxVal, step)
+    minVal = tonumber(minVal) or 0
+    maxVal = tonumber(maxVal) or minVal
+    step = tonumber(step) or 1
+
+    if type(v) ~= "number" then
+        v = tonumber(v) or minVal
+    end
+
+    local epsilon = step * 0.5
+    if v <= (minVal + epsilon) then
+        return minVal
+    end
+    if v >= (maxVal - epsilon) then
+        return maxVal
+    end
+
+    local snapped = math.floor(((v - minVal) / step) + 0.5) * step + minVal
+    return math.max(minVal, math.min(maxVal, snapped))
 end
 
 CollectExtraBoolCombatTextCVars = function()
