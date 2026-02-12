@@ -1389,6 +1389,9 @@ local function RegisterOptionsCategory()
     end
 end
 
+local dropdownKeyboardOrder = {}
+local activeDropdownNavIndex
+
 local function SetDropdownTextCompat(dd, text)
     if not dd then return end
     if type(UIDropDownMenu_SetText) == "function" then
@@ -1418,6 +1421,59 @@ local function SetDropdownWidthCompat(dd, width)
         return true
     end
     return false
+end
+
+local function GetDropdownToggleButton(dd)
+    if not dd then return nil end
+
+    local btn = dd.Button or dd.button
+    if (not btn) and dd.GetName and _G then
+        local n = dd:GetName()
+        if type(n) == "string" and n ~= "" then
+            btn = _G[n .. "Button"]
+        end
+    end
+    if not btn then return nil end
+    if btn.GetObjectType and btn:GetObjectType() ~= "Button" then
+        return nil
+    end
+    return btn
+end
+
+local function SetDropdownKeyboardFocus(index)
+    if #dropdownKeyboardOrder == 0 then return end
+    if type(index) ~= "number" then index = 1 end
+
+    local nextIndex = math.floor(index)
+    if nextIndex < 1 then
+        nextIndex = #dropdownKeyboardOrder
+    elseif nextIndex > #dropdownKeyboardOrder then
+        nextIndex = 1
+    end
+
+    for i, dd in ipairs(dropdownKeyboardOrder) do
+        local btn = GetDropdownToggleButton(dd)
+        if btn and btn.UnlockHighlight then
+            btn:UnlockHighlight()
+        end
+        if i == nextIndex and btn and btn.LockHighlight then
+            btn:LockHighlight()
+        end
+    end
+
+    activeDropdownNavIndex = nextIndex
+end
+
+local function OpenFocusedDropdownFromKeyboard()
+    if #dropdownKeyboardOrder == 0 then return end
+    if type(ToggleDropDownMenu) ~= "function" then return end
+
+    local idx = activeDropdownNavIndex or 1
+    local dd = dropdownKeyboardOrder[idx]
+    local btn = GetDropdownToggleButton(dd)
+    if not (dd and btn and btn.IsShown and btn:IsShown()) then return end
+
+    pcall(ToggleDropDownMenu, 1, nil, dd, btn, 0, 0)
 end
 
 local function ApplyBackdropCompat(target, backdrop, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
@@ -2776,6 +2832,15 @@ for idx, grp in ipairs(order) do
     dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row*50) + 8)
     SetDropdownWidthCompat(dd, DD_WIDTH)
     dropdowns[grp] = dd
+    table.insert(dropdownKeyboardOrder, dd)
+
+    local ddBtn = GetDropdownToggleButton(dd)
+    if ddBtn and ddBtn.HookScript then
+        ddBtn:HookScript("OnMouseDown", function()
+            SetDropdownKeyboardFocus(idx)
+        end)
+    end
+
     if idx == #order then
         lastDropdown = dd -- remember last dropdown for layout anchoring
     end
@@ -2906,6 +2971,8 @@ for idx, grp in ipairs(order) do
         end
     end)
 end
+
+SetDropdownKeyboardFocus(1)
 
 -- 5) SCALE SLIDER -----------------------------------------------------------
 local scaleLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3217,11 +3284,47 @@ frame:SetScript("OnHide", function()
 
     -- Put the preview back to the actually applied font so reopening is consistent.
     pcall(SyncPreviewToAppliedFont)
+
+    activeDropdownNavIndex = nil
+    for _, dd in ipairs(dropdownKeyboardOrder) do
+        local btn = GetDropdownToggleButton(dd)
+        if btn and btn.UnlockHighlight then
+            btn:UnlockHighlight()
+        end
+    end
 end)
 
 frame:EnableKeyboard(true)
 frame:SetScript("OnKeyDown", function(self, key)
-    if key ~= "ESCAPE" then return end
+    -- Preserve native text-editing behavior while typing in the preview edit box.
+    if editBox and editBox.HasFocus and editBox:HasFocus() and key ~= "ESCAPE" then
+        return
+    end
+
+    if key == "TAB" then
+        local step = (IsShiftKeyDown and IsShiftKeyDown()) and -1 or 1
+        SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + step)
+        return
+    end
+
+    if key == "LEFT" then
+        SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) - 1)
+        return
+    elseif key == "RIGHT" then
+        SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + 1)
+        return
+    elseif key == "UP" then
+        SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) - DD_COLS)
+        return
+    elseif key == "DOWN" then
+        SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + DD_COLS)
+        return
+    elseif key == "SPACE" or key == "ENTER" then
+        OpenFocusedDropdownFromKeyboard()
+        return
+    elseif key ~= "ESCAPE" then
+        return
+    end
 
     -- If the reset dialog is open, close it first and keep the main window open.
     if self.__fmResetDialog and self.__fmResetDialog.IsShown and self.__fmResetDialog:IsShown() then
