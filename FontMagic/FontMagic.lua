@@ -1589,6 +1589,17 @@ local function GetSliderDisplayDecimals(step, minVal, maxVal)
     return d
 end
 
+local function NumbersNearlyEqual(a, b, tolerance)
+    local x = tonumber(a)
+    local y = tonumber(b)
+    if x == nil or y == nil then
+        return false
+    end
+
+    local eps = tonumber(tolerance) or 0.000001
+    return math.abs(x - y) <= eps
+end
+
 local function NormalizeSliderRange(minVal, maxVal, fallbackMin, fallbackMax)
     local lo = tonumber(minVal)
     local hi = tonumber(maxVal)
@@ -2669,10 +2680,17 @@ scaleValue:SetPoint("TOP", scaleLabel, "BOTTOM", 0, -6)
 slider:ClearAllPoints()
 slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -10)
 
+local lastAppliedScale
+
 local function UpdateScale(val)
     if not scaleSupported then return end
     val = SnapSliderToStep(val, scaleMin, scaleMax, scaleStep)
-    ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
+
+    if not NumbersNearlyEqual(lastAppliedScale, val, 0.000001) then
+        lastAppliedScale = val
+        ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
+    end
+
     scaleValue:SetText(string.format("%0." .. tostring(scaleDecimals) .. "f", val))
 end
 
@@ -2699,6 +2717,7 @@ local function RefreshScaleControl()
         local currentScale = tonumber(scaleCVarValue)
             or tonumber(GetCVarString(scaleCVar)) or 1.0
         local snappedScale = SnapSliderToStep(currentScale, scaleMin, scaleMax, scaleStep)
+        lastAppliedScale = snappedScale
         slider:SetValue(snappedScale)
         scaleValue:SetText(string.format(scaleEndpointFmt, snappedScale))
         local settingScaleValue = false
@@ -2724,6 +2743,7 @@ local function RefreshScaleControl()
             GameTooltip:Show()
         end)
     else
+        lastAppliedScale = nil
         slider:Disable()
         scaleLabel:SetTextColor(0.5, 0.5, 0.5)
         local low = _G[slider:GetName() .. "Low"]
@@ -3779,11 +3799,21 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     local settingValue = false
     local pendingCommitValue
     local isDragging = false
+    local lastAppliedValue
+
+    local function applyIfChanged(v)
+        if lastAppliedValue ~= nil and NumbersNearlyEqual(lastAppliedValue, v, 0.000001) then
+            return v
+        end
+        lastAppliedValue = v
+        onChange(v)
+        return v
+    end
 
     local function commitValue(v)
         local rounded = setVal(v)
         pendingCommitValue = rounded
-        onChange(rounded)
+        applyIfChanged(rounded)
         return rounded
     end
 
@@ -3797,10 +3827,10 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
             settingValue = false
         end
         if liveApply then
-            onChange(rounded)
+            applyIfChanged(rounded)
         elseif not isDragging then
             -- Keyboard/controller adjustments do not fire OnMouseUp.
-            onChange(rounded)
+            applyIfChanged(rounded)
         end
     end)
 
@@ -3824,7 +3854,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         if pendingCommitValue == nil then return end
         local rounded = SnapSliderToStep(pendingCommitValue, minVal, maxVal, step)
         pendingCommitValue = nil
-        onChange(rounded)
+        applyIfChanged(rounded)
         settingValue = true
         self:SetValue(rounded)
         settingValue = false
