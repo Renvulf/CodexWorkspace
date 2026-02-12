@@ -1,3 +1,3 @@
-1) Add an in-panel one-click /reload helper after layout preset or advanced combat-option changes.
-2) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.
-3) Consider a lightweight "last refresh result details" tooltip for metadata refresh failures (client API gaps).
+1) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.
+2) Add a lightweight "last refresh result details" tooltip for metadata refresh failures (client API gaps).
+3) Add a quick in-panel diagnostics copy button for resolved combat setting targets to simplify support reports.

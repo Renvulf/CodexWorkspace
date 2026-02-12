@@ -1260,7 +1260,53 @@ ApplySavedCombatFont()
 
 -- 2) MAIN WINDOW
 local frame
+local eventFrame
 frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTemplate)
+
+local reloadAfterCombatQueued = false
+
+local function TriggerSafeReload(context)
+    if type(ReloadUI) ~= "function" then
+        print("|cFFFF3333[FontMagic]|r Reload is unavailable on this client. Please relog to apply this change.")
+        return false
+    end
+
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        reloadAfterCombatQueued = true
+        if eventFrame and eventFrame.RegisterEvent then
+            eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        end
+        local why = (type(context) == "string" and context ~= "") and (" (" .. context .. ")") or ""
+        print("|cFFFFD200[FontMagic]|r Reload queued until combat ends" .. why .. ".")
+        return false
+    end
+
+    ReloadUI()
+    return true
+end
+
+local function PromptReloadForLayoutChange()
+    if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then
+        return
+    end
+
+    if not StaticPopupDialogs["FONTMAGIC_RELOAD_LAYOUT"] then
+        StaticPopupDialogs["FONTMAGIC_RELOAD_LAYOUT"] = {
+            text = "FontMagic layout changes are saved and require a UI reload to fully apply. Reload now?",
+            button1 = "Reload Now",
+            button2 = "Later",
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+            OnAccept = function()
+                TriggerSafeReload("layout preset")
+            end,
+        }
+    end
+
+    StaticPopup_Show("FONTMAGIC_RELOAD_LAYOUT")
+end
 --
 -- The options window previously lacked a border and used uneven padding
 -- around its contents.  Here we keep all the widgets exactly where they
@@ -1326,6 +1372,7 @@ local function SetLayoutPresetChoice(preset, quiet)
 
     if not quiet then
         print("|cFF00FF00[FontMagic]|r Layout preset set to " .. normalized .. ". Type /reload to apply it now.")
+        PromptReloadForLayoutChange()
     end
     return true
 end
@@ -5143,19 +5190,20 @@ defaultBtn:SetText("Reset")
 AttachTooltip(defaultBtn, "Reset", "Restore Blizzard defaults. Choose what to reset.")
 
 local layoutBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-layoutBtn:SetSize(132, 22)
+layoutBtn:SetSize(88, 22)
 layoutBtn:SetPoint("LEFT", defaultBtn, "RIGHT", 8, 0)
 
 local function UpdateLayoutButtonText()
     if not layoutBtn or not layoutBtn.SetText then return end
-    local txt = (layoutPreset == FM_LAYOUT_PRESET_COMPACT) and "Layout: Compact" or "Layout: Default"
+    local txt = (layoutPreset == FM_LAYOUT_PRESET_COMPACT) and "Layout: C" or "Layout: D"
     layoutBtn:SetText(txt)
 end
 
 UpdateLayoutButtonText()
 AttachTooltip(layoutBtn, "Window layout preset",
     "Choose between the default layout and a compact layout optimized for lower UI scales.\n\n" ..
-    "This setting is safe and persistent, and takes effect after /reload.")
+    "This setting is safe and persistent, and takes effect after /reload.\n\n" ..
+    "When changed, FontMagic shows a one-click reload prompt.")
 layoutBtn:SetScript("OnClick", function()
     local nextPreset = (layoutPreset == FM_LAYOUT_PRESET_COMPACT) and FM_LAYOUT_PRESET_DEFAULT or FM_LAYOUT_PRESET_COMPACT
     local changed = SetLayoutPresetChoice(nextPreset)
@@ -5598,6 +5646,9 @@ SlashCmdList["FCT"] = function(msg)
         PrintCombatSettingsDebugReport()
         print("|cFF00FF00[FontMagic]|r Layout preset: " .. tostring((FontMagicDB and FontMagicDB.layoutPreset) or FM_LAYOUT_PRESET_DEFAULT))
         return
+    elseif msg == "reload" then
+        TriggerSafeReload("/float reload")
+        return
     elseif msg == "compact" then
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_COMPACT)
         return
@@ -5605,9 +5656,9 @@ SlashCmdList["FCT"] = function(msg)
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_DEFAULT)
         return
     elseif msg == "help" then
-        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
         print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
-        print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then /reload.")
+        print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then click Reload Now in the prompt or run /float reload.")
         return
     end
 
@@ -5908,7 +5959,7 @@ local function ApplyAllSavedOverrides()
     end
 end
 
-local eventFrame = CreateFrame("Frame")
+eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("CVAR_UPDATE")
@@ -5983,6 +6034,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
             ApplyFloatingTextMotionSettings()
+        end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if reloadAfterCombatQueued then
+            reloadAfterCombatQueued = false
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            TriggerSafeReload("queued")
+        else
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
         end
     end
 end)
