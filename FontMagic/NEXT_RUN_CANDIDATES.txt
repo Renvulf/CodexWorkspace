@@ -1,6 +1,5 @@
-1) Add a compact "pending changes" status line in the main panel so users can immediately tell preview-only vs applied state.
-2) Consolidate dropdown row construction into one helper (favorites + normal groups) to reduce duplicate logic and future drift.
-3) Add a small compatibility wrapper for Settings category registration failures with a one-time chat warning fallback.
-4) Audit/reset duplicate candidate file names (`Next-run-candidates.txt` vs `NEXT_RUN_CANDIDATES.txt`) to keep repo metadata tidy.
-5) Add a guarded refresh button for motion/scale bounds in case command metadata arrives after login on some clients.
-6) Tighten minimap drag clamping at very low/high UI scale factors to avoid edge clipping.
+1) Add a small "Apply" pulse/highlight when a preview is pending, then clear it immediately after apply/reset.
+2) Consolidate repeated preview refresh snippets into one helper to reduce drift across dropdown/select/reset paths.
+3) Add an out-of-combat, user-triggered "Re-read slider bounds" action for clients where console metadata arrives late.
+4) Normalize duplicate metadata filename casing (`Next-run-candidates.txt` vs `NEXT_RUN_CANDIDATES.txt`) after confirming external tooling expectations.
+5) Add one lightweight self-check command that prints resolved combat-text CVars for support/debug reports.
