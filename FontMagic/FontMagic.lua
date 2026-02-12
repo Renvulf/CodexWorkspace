@@ -1412,9 +1412,12 @@ UpdateFavoriteStar = function(menuButton, key)
     -- UIDropDownMenu recycles list buttons. If this row is a disabled placeholder
     -- (e.g. "No favorites yet"), hide any previously-attached star.
     if not key then
+        star.__fmKey = nil
+        if star.EnableMouse then star:EnableMouse(false) end
         if star.Hide then star:Hide() end
         return
     end
+    if star.EnableMouse then star:EnableMouse(true) end
     if star.Show then star:Show() end
 
     local fav = (IsFavorite(key)) and true or false
@@ -1433,6 +1436,37 @@ end
 
 local function GetDropDownListButton(level, index)
     return _G and _G["DropDownList" .. tostring(level) .. "Button" .. tostring(index)] or nil
+end
+
+-- Slider snapping helper used by both the main combat-text scale slider and
+-- floating-text motion sliders. This keeps endpoint behavior consistent across
+-- clients where floating-point drag updates can otherwise miss min/max labels.
+local function SnapSliderToStep(v, minVal, maxVal, step)
+    minVal = tonumber(minVal) or 0
+    maxVal = tonumber(maxVal) or minVal
+    if maxVal < minVal then
+        minVal, maxVal = maxVal, minVal
+    end
+
+    step = tonumber(step) or 1
+    if step <= 0 then
+        step = 1
+    end
+
+    if type(v) ~= "number" then
+        v = tonumber(v) or minVal
+    end
+
+    local epsilon = step * 0.5
+    if v <= (minVal + epsilon) then
+        return minVal
+    end
+    if v >= (maxVal - epsilon) then
+        return maxVal
+    end
+
+    local snapped = math.floor(((v - minVal) / step) + 0.5) * step + minVal
+    return math.max(minVal, math.min(maxVal, snapped))
 end
 
 --[[
@@ -3397,35 +3431,22 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
 
     local fmt = "%0." .. tostring(decimals) .. "f"
 
-    local function snapSliderValue(v)
-        if type(v) ~= "number" then
-            v = tonumber(v) or minVal
-        end
-
-        -- Snap near endpoints first so min/max remain exactly reachable even
-        -- when floating-point drift occurs during drag updates.
-        local epsilon = (step or 0) * 0.5
-        if v <= (minVal + epsilon) then
-            return minVal
-        end
-        if v >= (maxVal - epsilon) then
-            return maxVal
-        end
-
-        local rounded = math.floor(((v - minVal) / step) + 0.5) * step + minVal
-        rounded = math.max(minVal, math.min(maxVal, rounded))
-        return rounded
-    end
-
     local function setVal(v)
-        local snapped = snapSliderValue(v)
+        local snapped = SnapSliderToStep(v, minVal, maxVal, step)
         valText:SetText(string.format(fmt, snapped))
         return snapped
     end
 
-    s:SetScript("OnValueChanged", function(_, v)
+    local settingValue = false
+
+    s:SetScript("OnValueChanged", function(self, v)
         if not enabled then return end
         local rounded = setVal(v)
+        if not settingValue and math.abs((tonumber(v) or rounded) - rounded) > 0.00001 then
+            settingValue = true
+            self:SetValue(rounded)
+            settingValue = false
+        end
         if liveApply then
             onChange(rounded)
         end
@@ -3455,30 +3476,6 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     table.insert(combatWidgets, valText)
     table.insert(combatWidgets, s)
     return s
-end
-
--- Slider snapping helper used by both the main combat-text scale slider and
--- floating-text motion sliders. This keeps endpoint behavior consistent across
--- clients where floating-point drag updates can otherwise miss min/max labels.
-local function SnapSliderToStep(v, minVal, maxVal, step)
-    minVal = tonumber(minVal) or 0
-    maxVal = tonumber(maxVal) or minVal
-    step = tonumber(step) or 1
-
-    if type(v) ~= "number" then
-        v = tonumber(v) or minVal
-    end
-
-    local epsilon = step * 0.5
-    if v <= (minVal + epsilon) then
-        return minVal
-    end
-    if v >= (maxVal - epsilon) then
-        return maxVal
-    end
-
-    local snapped = math.floor(((v - minVal) / step) + 0.5) * step + minVal
-    return math.max(minVal, math.min(maxVal, snapped))
 end
 
 CollectExtraBoolCombatTextCVars = function()
