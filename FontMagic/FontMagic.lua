@@ -3325,8 +3325,9 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     return dd
 end
 
-local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint)
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply)
     if enabled == nil then enabled = true end
+    if liveApply == nil then liveApply = true end
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
     fs:SetText(label)
@@ -3340,15 +3341,25 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     table.insert(combatWidgets, valText)
 
     local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
-    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -6)
-    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 10)
+    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
+    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 18)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
     -- Keep drag movement smooth on clients where obey-step dragging can feel
     -- clicky for decimal steps (for example 0.05). We still snap in code.
     s:SetObeyStepOnDrag(false)
-    _G[s:GetName() .. "Low"]:SetText(string.format("%.2f", minVal))
-    _G[s:GetName() .. "High"]:SetText(string.format("%.2f", maxVal))
+    local low = _G[s:GetName() .. "Low"]
+    local high = _G[s:GetName() .. "High"]
+    if low then
+        low:SetText(string.format("%.2f", minVal))
+        low:ClearAllPoints()
+        low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
+    end
+    if high then
+        high:SetText(string.format("%.2f", maxVal))
+        high:ClearAllPoints()
+        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -2)
+    end
     local t = s.Text or _G[s:GetName() .. "Text"]
     if t and t.Hide then t:Hide() end
 
@@ -3362,7 +3373,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetScript("OnValueChanged", function(_, v)
         if not enabled then return end
         local rounded = setVal(v)
-        onChange(rounded)
+        if liveApply then
+            onChange(rounded)
+        end
     end)
 
     -- Explicitly enable mouse interaction and commit a snapped value after drag.
@@ -3650,7 +3663,9 @@ BuildCombatOptionsUI = function()
             ApplyFloatingTextMotionSettings()
         end,
         "Controls arc intensity while world-space numbers move upward and settle.",
-        gravitySupported
+        gravitySupported,
+        nil,
+        false
     )
 
     CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
@@ -3661,7 +3676,9 @@ BuildCombatOptionsUI = function()
             ApplyFloatingTextMotionSettings()
         end,
         "Controls how long world-space numbers remain visible before fading.",
-        fadeSupported
+        fadeSupported,
+        nil,
+        false
     )
 
     y = y - 120
@@ -3966,6 +3983,11 @@ local function ResetCombatOptionsOnly()
     FontMagicDB.incomingOverrides = {}
     FontMagicDB.combatMasterSnapshot = nil
     FontMagicDB.combatMasterOffByFontMagic = nil
+    FontMagicDB.applyToWorldText = true
+    FontMagicDB.applyToScrollingText = true
+    FontMagicDB.scrollingTextOutlineMode = ""
+    FontMagicDB.scrollingTextMonochrome = false
+    FontMagicDB.scrollingTextShadowOffset = 1
 
     local function ResetBoolCVarToDefault(name)
         if not name then return end
