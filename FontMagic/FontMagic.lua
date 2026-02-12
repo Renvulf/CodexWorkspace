@@ -909,6 +909,11 @@ local function ApplySavedCombatFont()
     end
 
     local path, grp, fname = ResolveFontPathFromKey(key)
+    if (not path) and type(FontMagicDB.selectedFontPath) == "string" and FontMagicDB.selectedFontPath ~= "" then
+        -- Keep a direct path fallback so a previously-selected font can still
+        -- be restored if group/file catalog names change between releases.
+        path = FontMagicDB.selectedFontPath
+    end
     if not path then
         -- Saved selection no longer exists; fall back to Default safely.
         FontMagicDB.selectedFont = ""
@@ -924,6 +929,8 @@ local function ApplySavedCombatFont()
             FontMagicDB.selectedFont = canon
         end
     end
+
+    FontMagicDB.selectedFontPath = path
 
     ApplyCombatTextFontPath(path)
 end
@@ -3673,6 +3680,7 @@ applyBtn:SetScript("OnClick", function()
 
         local path = ResolveFontPathFromKey(selection)
         if path then
+            FontMagicDB.selectedFontPath = path
             -- Best-effort immediate apply (helps on /reload). A relog is still the
             -- most reliable way to ensure combat text picks it up across clients.
             ApplyCombatTextFontPath(path)
@@ -3691,6 +3699,7 @@ applyBtn:SetScript("OnClick", function()
 
     -- No selection: clear and restore defaults
     if FontMagicDB then FontMagicDB.selectedFont = nil end
+    if FontMagicDB then FontMagicDB.selectedFontPath = nil end
     CaptureBlizzardDefaultFonts()
     local defaultPath = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH or "Fonts\\FRIZQT__.TTF"
     ApplyCombatTextFontPath(defaultPath)
@@ -3773,6 +3782,7 @@ local function ResetFontOnly()
 
     FontMagicDB = FontMagicDB or {}
     FontMagicDB.selectedFont = nil
+    FontMagicDB.selectedFontPath = nil
     FontMagicDB.selectedGroup = nil
     FontMagicDB.minimapAngle = keepAngle
     FontMagicDB.minimapHide  = keepHide
@@ -4296,6 +4306,9 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("CVAR_UPDATE")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+local didFirstWorldApply = false
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
@@ -4344,5 +4357,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "CVAR_UPDATE" then
         -- Keep UI in sync if the user changes settings via the default Options UI.
         RefreshCombatTextCVars()
+
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Some clients reinitialize combat text assets late in the login flow.
+        -- Re-apply once on first world entry so the saved font survives relogs.
+        if not didFirstWorldApply then
+            didFirstWorldApply = true
+            CaptureBlizzardDefaultFonts()
+            ApplySavedCombatFont()
+            ApplyFloatingTextMotionSettings()
+        end
     end
 end)
