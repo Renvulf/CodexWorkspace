@@ -1322,6 +1322,7 @@ local function AttachFavoriteStar(menuButton)
     -- Slightly increase visibility on hover without relying on unicode glyphs
     -- (many default UI fonts do not contain ★/☆ on older clients).
     star:SetScript("OnEnter", function(self)
+        if not self.__fmKey then return end
         self.__fmHover = true
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local key = self.__fmKey
@@ -1438,6 +1439,18 @@ local function GetDropDownListButton(level, index)
     return _G and _G["DropDownList" .. tostring(level) .. "Button" .. tostring(index)] or nil
 end
 
+local function GetStepDecimals(step)
+    local decimals = 0
+    local str = tostring(step or "")
+    local frac = str:match("%f[%d]%.(%d+)")
+    if frac then
+        decimals = #frac
+    end
+    if decimals < 0 then decimals = 0 end
+    if decimals > 6 then decimals = 6 end
+    return decimals
+end
+
 -- Slider snapping helper used by both the main combat-text scale slider and
 -- floating-text motion sliders. This keeps endpoint behavior consistent across
 -- clients where floating-point drag updates can otherwise miss min/max labels.
@@ -1457,16 +1470,21 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
         v = tonumber(v) or minVal
     end
 
-    local epsilon = step * 0.5
-    if v <= (minVal + epsilon) then
+    local epsilon = math.max(step * 0.15, 0.000001)
+    if math.abs(v - minVal) <= epsilon then
         return minVal
     end
-    if v >= (maxVal - epsilon) then
+    if math.abs(maxVal - v) <= epsilon then
         return maxVal
     end
 
     local snapped = math.floor(((v - minVal) / step) + 0.5) * step + minVal
-    return math.max(minVal, math.min(maxVal, snapped))
+    snapped = math.max(minVal, math.min(maxVal, snapped))
+
+    local precision = GetStepDecimals(step)
+    local mult = 10 ^ precision
+    snapped = math.floor(snapped * mult + 0.5) / mult
+    return snapped
 end
 
 --[[
@@ -2135,7 +2153,9 @@ for idx, grp in ipairs(order) do
         dd:SetScript("OnEnter", function(self)
             if not hasCustomFonts then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText("Install FontMagicCustomFonts to use custom fonts", nil, nil, nil, nil, true)
+                GameTooltip:SetText("Custom fonts are provided by the optional FontMagicCustomFonts addon.")
+                GameTooltip:AddLine("", 1, 1, 1)
+                GameTooltip:AddLine("Install FontMagicCustomFonts, place .ttf/.otf files in its Custom folder, then reload your UI.", 0.9, 0.9, 0.9, true)
                 GameTooltip:Show()
             end
         end)
@@ -2247,8 +2267,11 @@ for idx, grp in ipairs(order) do
             -- This entry is a disabled placeholder; ensure any recycled menu button
             -- doesn't show a leftover favorite star from a previous dropdown open.
             local mb = GetDropDownListButton(level, buttonIndex + 1)
-            if mb and mb.__fmStar then
-                UpdateFavoriteStar(mb, nil)
+            if mb then
+                __fmClearMenuButtonHoverPreview(mb)
+                if mb.__fmStar then
+                    UpdateFavoriteStar(mb, nil)
+                end
             end
         end
     end)
@@ -3405,29 +3428,20 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetObeyStepOnDrag(false)
     local low = _G[s:GetName() .. "Low"]
     local high = _G[s:GetName() .. "High"]
+    local decimals = GetStepDecimals(step)
+    local endpointFmt = "%0." .. tostring(decimals) .. "f"
     if low then
-        low:SetText(string.format("%.2f", minVal))
+        low:SetText(string.format(endpointFmt, minVal))
         low:ClearAllPoints()
         low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
     end
     if high then
-        high:SetText(string.format("%.2f", maxVal))
+        high:SetText(string.format(endpointFmt, maxVal))
         high:ClearAllPoints()
         high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", -8, -2)
     end
     local t = s.Text or _G[s:GetName() .. "Text"]
     if t and t.Hide then t:Hide() end
-
-    local decimals = 0
-    do
-        local s = tostring(step or "")
-        local frac = s:match("%.(%d+)")
-        if frac then
-            decimals = #frac
-        end
-        if decimals < 0 then decimals = 0 end
-        if decimals > 4 then decimals = 4 end
-    end
 
     local fmt = "%0." .. tostring(decimals) .. "f"
 
