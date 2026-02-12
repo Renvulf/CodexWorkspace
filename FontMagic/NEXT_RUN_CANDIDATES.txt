@@ -1,5 +1,5 @@
-1) Add a tiny in-UI debug pane (hidden behind a slash command) to show resolved CVar/console names per client for faster support triage.
-2) Add a non-invasive UI pass for keyboard/gamepad focus order in the main panel and combat options panel.
-3) Review combat options panel for a larger two-column reflow that shortens scroll depth without reducing clarity.
-4) Add an optional compact mode for small UI scale users that preserves current default layout as-is.
-5) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.
+1) Validate minimap icon behavior on ultra-wide + square minimap add-ons and add a bounded radius option if overlap is observed.
+2) Add keyboard focus traversal polish for the combat options panel (tab order + clear focus ring behavior).
+3) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth on 1080p.
+4) Add a lightweight diagnostics export command for resolved combat setting targets (copy-friendly chat output).
+5) Consider a compact mode preset for low UI scale users without changing current defaults.

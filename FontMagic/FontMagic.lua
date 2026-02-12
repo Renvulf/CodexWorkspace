@@ -494,10 +494,23 @@ end
 do
     local originalAddCategory = InterfaceOptions_AddCategory
     if originalAddCategory == nil and type(Settings) == "table" then
+        local hasCanvasCategory = type(Settings.RegisterCanvasLayoutCategory) == "function"
+        local hasAddOnCategory = type(Settings.RegisterAddOnCategory) == "function"
+        local hasGetCategory = type(Settings.GetCategory) == "function"
+        local hasSubcategory = type(Settings.RegisterCanvasLayoutSubcategory) == "function"
+
         -- Define a shim for InterfaceOptions_AddCategory using the Settings API
         InterfaceOptions_AddCategory = function(frame)
             -- Respect missing frame inputs
             if not frame then return end
+
+            -- Some clients expose a partial Settings table. If required methods are
+            -- absent, fail safely rather than throwing an error during panel registration.
+            if not hasCanvasCategory then
+                return nil
+            end
+
+            local panelName = tostring(frame.name or addonName or "FontMagic")
 
             -- If this panel has a parent, register it as a sub‑category of
             -- the parent's settings entry.  Otherwise register a top‑level
@@ -505,20 +518,21 @@ do
             -- display name; we use frame.name for both as per the forums example
             --.
             local category, parentCategory
-            if frame.parent then
+            if frame.parent and hasGetCategory and hasSubcategory then
                 parentCategory = Settings.GetCategory(frame.parent)
                 if parentCategory then
-                    local subcategory, layout = Settings.RegisterCanvasLayoutSubcategory(parentCategory, frame, frame.name, frame.name)
-                    subcategory.ID = frame.name
+                    local subcategory = select(1, Settings.RegisterCanvasLayoutSubcategory(parentCategory, frame, panelName, panelName))
+                    if not subcategory then return nil end
+                    subcategory.ID = panelName
                     return subcategory
                 end
             end
             -- Register a top‑level category.  RegisterAddOnCategory makes it
             -- appear in the "AddOns" section of the Settings panel
-            category = select(1, Settings.RegisterCanvasLayoutCategory(frame, frame.name, frame.name))
+            category = select(1, Settings.RegisterCanvasLayoutCategory(frame, panelName, panelName))
             if category then
-                category.ID = frame.name
-                if type(Settings.RegisterAddOnCategory) == "function" then
+                category.ID = panelName
+                if hasAddOnCategory then
                     Settings.RegisterAddOnCategory(category)
                 end
             end
@@ -1228,9 +1242,20 @@ end
 local _optionsRegistered = false
 local function RegisterOptionsCategory()
     if _optionsRegistered then return end
-    _optionsRegistered = true
     if type(InterfaceOptions_AddCategory) == "function" then
-        pcall(InterfaceOptions_AddCategory, frame)
+        local ok = pcall(InterfaceOptions_AddCategory, frame)
+        if ok then
+            _optionsRegistered = true
+        end
+    end
+end
+
+local function SetDropdownTextCompat(dd, text)
+    if not dd then return end
+    if type(UIDropDownMenu_SetText) == "function" then
+        pcall(UIDropDownMenu_SetText, dd, text)
+    elseif dd.SetText then
+        dd:SetText(text)
     end
 end
 
@@ -4883,6 +4908,9 @@ SlashCmdList["FCT"] = function(msg)
         print("|cFF00FF00[FontMagic]|r Minimap icon hidden. Use /float show to restore.")
         return
     elseif msg == "show" then
+        if not minimapButton then
+            CreateMinimapButton()
+        end
         if minimapButton then minimapButton:Show() end
         FontMagicDB.minimapHide = false
         return
@@ -4902,7 +4930,9 @@ SlashCmdList["FCT"] = function(msg)
     pendingFont = nil -- discard any un-applied selection
     if UpdatePendingStateText then UpdatePendingStateText() end
 
-    for g,d in pairs(dropdowns) do UIDropDownMenu_SetText(d, "Select Font") end
+    for _, d in pairs(dropdowns) do
+        SetDropdownTextCompat(d, "Select Font")
+    end
     if FontMagicDB.selectedFont then
         -- parse using the last '/' to support group names that contain
         -- slashes from older categories.
@@ -4967,10 +4997,6 @@ SlashCmdList["FCT"] = function(msg)
 end
 
 -- 13) MINIMAP ICON -----------------------------------------------------------
-minimapButton = CreateFrame("Button", addonName .. "MinimapButton", Minimap)
-minimapButton:SetSize(20, 20)
-minimapButton:SetFrameStrata("MEDIUM")
-minimapButton:SetFrameLevel(8)
 
 -- helper to position the minimap button at a specific angle
 local function PositionMinimapButton(btn, angle)
@@ -5016,64 +5042,73 @@ local function UpdateMinimapButtonDrag(self)
     PositionMinimapButton(self, ang)
 end
 
--- icon (masked to a circle)
-local iconTex = minimapButton:CreateTexture(nil, "BACKGROUND")
-iconTex:SetTexture(ADDON_PATH .. "FontMagic_MinimapIcon_Best_64.tga")
-iconTex:SetAllPoints(minimapButton)
+local function CreateMinimapButton()
+    if minimapButton then return minimapButton end
+    if not (Minimap and type(CreateFrame) == "function") then return nil end
+
+    minimapButton = CreateFrame("Button", addonName .. "MinimapButton", Minimap)
+    minimapButton:SetSize(20, 20)
+    minimapButton:SetFrameStrata("MEDIUM")
+    minimapButton:SetFrameLevel(8)
+
+    -- icon (masked to a circle)
+    local iconTex = minimapButton:CreateTexture(nil, "BACKGROUND")
+    iconTex:SetTexture(ADDON_PATH .. "FontMagic_MinimapIcon_Best_64.tga")
+    iconTex:SetAllPoints(minimapButton)
     if iconTex.SetMaskTexture then
         -- Use a double-backslash path to avoid Lua escape sequences removing the backslashes.
         -- Without escaping, a single \M would remove the backslash and break the path.
         iconTex:SetMaskTexture("Interface\\Minimap\\UI-Minimap-Mask")
     end
 
--- ring overlay
-local ring = minimapButton:CreateTexture(nil, "OVERLAY")
-ring:SetTexture(ADDON_PATH .. "FontMagic_MinimapRing_Best_64.tga")
-local w, h = minimapButton:GetSize()
-ring:SetSize(w * 1.5, h * 1.5)
-ring:SetAlpha(0.85)
-iconTex:SetAlpha(0.95)
-ring:SetPoint("CENTER", minimapButton, "CENTER", 0, 0)
+    -- ring overlay
+    local ring = minimapButton:CreateTexture(nil, "OVERLAY")
+    ring:SetTexture(ADDON_PATH .. "FontMagic_MinimapRing_Best_64.tga")
+    local w, h = minimapButton:GetSize()
+    ring:SetSize(w * 1.5, h * 1.5)
+    ring:SetAlpha(0.85)
+    iconTex:SetAlpha(0.95)
+    ring:SetPoint("CENTER", minimapButton, "CENTER", 0, 0)
 
     -- Use a double-backslash path to avoid Lua escape sequences removing the backslashes.
     minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-minimapButton:EnableMouse(true)
-minimapButton:SetHitRectInsets(-6, -6, -6, -6)
-minimapButton:RegisterForClicks("LeftButtonUp")
-minimapButton:RegisterForDrag("LeftButton")
-minimapButton:SetScript("OnClick", function()
-    if SlashCmdList and SlashCmdList["FCT"] then
-        SlashCmdList["FCT"]()
+    minimapButton:EnableMouse(true)
+    minimapButton:SetHitRectInsets(-6, -6, -6, -6)
+    minimapButton:RegisterForClicks("LeftButtonUp")
+    minimapButton:RegisterForDrag("LeftButton")
+    minimapButton:SetScript("OnClick", function()
+        if SlashCmdList and SlashCmdList["FCT"] then
+            SlashCmdList["FCT"]()
+        end
+    end)
+
+    minimapButton:SetScript("OnDragStart", function(self)
+        self.isMoving = true
+        self:SetScript("OnUpdate", UpdateMinimapButtonDrag)
+    end)
+    minimapButton:SetScript("OnDragStop", function(self)
+        self.isMoving = false
+        self:SetScript("OnUpdate", nil)
+        PositionMinimapButton(self, FontMagicDB and FontMagicDB.minimapAngle)
+    end)
+
+    minimapButton:SetScript("OnEnter", function(self)
+        ShowTooltip(self, "ANCHOR_LEFT", "FontMagic")
+        if ring then ring:SetAlpha(1.0) end
+        if iconTex then iconTex:SetAlpha(1.0) end
+    end)
+    minimapButton:SetScript("OnLeave", function()
+        HideTooltip()
+        if ring then ring:SetAlpha(0.85) end
+        if iconTex then iconTex:SetAlpha(0.95) end
+    end)
+
+    PositionMinimapButton(minimapButton, FontMagicDB and FontMagicDB.minimapAngle)
+    if FontMagicDB and FontMagicDB.minimapHide then
+        minimapButton:Hide()
     end
-end)
 
-minimapButton:SetScript("OnDragStart", function(self)
-    self.isMoving = true
-    self:SetScript("OnUpdate", UpdateMinimapButtonDrag)
-end)
-minimapButton:SetScript("OnDragStop", function(self)
-    self.isMoving = false
-    self:SetScript("OnUpdate", nil)
-    PositionMinimapButton(self, FontMagicDB and FontMagicDB.minimapAngle)
-end)
-
-minimapButton:SetScript("OnEnter", function(self)
-    ShowTooltip(self, "ANCHOR_LEFT", "FontMagic")
-    if ring then ring:SetAlpha(1.0) end
-    if iconTex then iconTex:SetAlpha(1.0) end
-end)
-minimapButton:SetScript("OnLeave", function()
-    HideTooltip()
-    if ring then ring:SetAlpha(0.85) end
-    if iconTex then iconTex:SetAlpha(0.95) end
-end)
-
--- place immediately
-PositionMinimapButton(minimapButton, FontMagicDB and FontMagicDB.minimapAngle)
-
--- honour saved visibility preference
-if FontMagicDB and FontMagicDB.minimapHide then
-    minimapButton:Hide()
+    return minimapButton
 end
 
 -- ---------------------------------------------------------------------------
@@ -5117,6 +5152,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
 
         UpdateMainCombatCheckboxes()
+        CreateMinimapButton()
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(0.2, UpdateMainCombatCheckboxes)
             C_Timer.After(1.0, UpdateMainCombatCheckboxes)
