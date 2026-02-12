@@ -1,5 +1,4 @@
-1) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
-2) Add lightweight API-availability badges to combat controls for faster troubleshooting.
-3) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
-4) Add an in-panel one-click /reload helper after layout preset changes.
-5) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.
+1) Add lightweight API-availability badges to combat controls for faster troubleshooting.
+2) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
+3) Add an in-panel one-click /reload helper after layout preset changes.
+4) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.

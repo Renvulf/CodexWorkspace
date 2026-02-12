@@ -58,6 +58,18 @@ local function __fmStripFontExt(fname)
     return base
 end
 
+local function BuildUnavailableControlHint(subject, detail)
+    local name = __fmTrim(subject or "This control")
+    if name == "" then name = "This control" end
+
+    local msg = string.format("%s is unavailable in this game client.", name)
+    local why = __fmTrim(detail or "")
+    if why ~= "" then
+        msg = msg .. "\n\nReason: " .. why
+    end
+    return msg .. "\n\nFontMagic will enable this automatically on clients that expose the required setting API."
+end
+
 -- Make font labels shorter by removing common style/weight suffixes like Bold/Italic/etc.
 -- This only affects what users SEE in dropdowns; the underlying font file selection remains unchanged.
 local __fmSTYLE_TOKENS = {
@@ -3142,7 +3154,7 @@ local function RefreshScaleControl()
         slider:SetScript("OnMouseUp", nil)
         slider:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Combat text size is unavailable in this game client.", nil, nil, nil, nil, true)
+            GameTooltip:SetText(BuildUnavailableControlHint("Combat text size", "The combat text scale setting was not found in this client build"), nil, nil, nil, nil, true)
             GameTooltip:Show()
         end)
     end
@@ -4291,7 +4303,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
         if enabled then
             AttachTooltip(dd, label, tip)
         else
-            AttachTooltip(dd, label, tip .. "\n\n" .. (disabledHint or "Not available on this client."))
+            AttachTooltip(dd, label, tip .. "\n\n" .. (disabledHint or BuildUnavailableControlHint(label)))
         end
     end
     table.insert(combatWidgets, dd)
@@ -4439,7 +4451,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         if low then low:SetText("") end
         if high then high:SetText("") end
         s:Disable()
-        if tip then AttachTooltip(s, label, tip .. rangeHint .. "\n\n" .. (disabledHint or "Not available on this client.")) end
+        if tip then AttachTooltip(s, label, tip .. rangeHint .. "\n\n" .. (disabledHint or BuildUnavailableControlHint(label))) end
     end
 
     table.insert(combatWidgets, s)
@@ -4698,15 +4710,21 @@ BuildCombatOptionsUI = function()
         local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
         if not gravitySupported and not fadeSupported then
-            unavailable:SetText("These motion controls are unavailable in this game client.")
+            unavailable:SetText(BuildUnavailableControlHint("Motion controls", "This client does not provide floating text gravity or fade settings"))
         elseif not gravitySupported then
-            unavailable:SetText("Gravity is unavailable in this game client.")
+            unavailable:SetText(BuildUnavailableControlHint("Motion gravity", "The gravity setting is not exposed by this client"))
         else
-            unavailable:SetText("Fade timing is unavailable in this game client.")
+            unavailable:SetText(BuildUnavailableControlHint("Fade duration", "The fade timing setting is not exposed by this client"))
         end
         unavailable:SetTextColor(0.7, 0.7, 0.7)
         table.insert(combatWidgets, unavailable)
-        y = y - 20
+        unavailable:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 16)
+        unavailable:SetJustifyH("LEFT")
+        unavailable:SetJustifyV("TOP")
+        unavailable:SetWordWrap(true)
+        local unavailableHeight = unavailable.GetStringHeight and tonumber(unavailable:GetStringHeight()) or 0
+        if unavailableHeight < 20 then unavailableHeight = 20 end
+        y = y - math.ceil(unavailableHeight + 6)
     end
 
     local motionControlY = y
@@ -4720,7 +4738,7 @@ BuildCombatOptionsUI = function()
         end,
         "Controls arc intensity while world-space numbers move upward and settle.",
         gravitySupported,
-        "Gravity control is unavailable on this client version.",
+        BuildUnavailableControlHint("Motion gravity", "The gravity setting is not exposed by this client"),
         false,
         { col = 0, width = motionColW }
     )
@@ -4734,7 +4752,7 @@ BuildCombatOptionsUI = function()
         end,
         "Controls how long world-space numbers remain visible before fading.",
         fadeSupported,
-        "Fade duration control is unavailable on this client version.",
+        BuildUnavailableControlHint("Fade duration", "The fade timing setting is not exposed by this client"),
         false,
         { col = 1, width = motionColW }
     )
