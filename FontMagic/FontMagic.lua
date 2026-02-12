@@ -16,12 +16,31 @@ local CUSTOM_ADDON = "FontMagicCustomFonts"
 -- Default path for custom fonts shipped by the companion addon
 local CUSTOM_PATH  = "Interface\\AddOns\\" .. CUSTOM_ADDON .. "\\Custom\\"
 
+local function NormalizeFolderPath(path)
+    if type(path) ~= "string" then return nil end
+    local p = path:gsub("/", "\\")
+    p = p:gsub("\\+", "\\")
+    if p == "" then return nil end
+    if not p:match("\\$") then
+        p = p .. "\\"
+    end
+    return p
+end
+
+local function RefreshCustomPathFromCompanion()
+    local reported = (type(FontMagicCustomFonts) == "table" and type(FontMagicCustomFonts.PATH) == "string") and FontMagicCustomFonts.PATH or nil
+    local normalized = NormalizeFolderPath(reported)
+    if normalized and normalized ~= "" then
+        CUSTOM_PATH = normalized
+    else
+        CUSTOM_PATH = "Interface\\AddOns\\" .. CUSTOM_ADDON .. "\\Custom\\"
+    end
+end
+
 -- Try to load the companion addon so its global table becomes available
 pcall(safeLoadAddOn, CUSTOM_ADDON)
 -- If loaded, prefer its reported path in case the folder was moved/renamed
-if type(FontMagicCustomFonts) == "table" and type(FontMagicCustomFonts.PATH) == "string" then
-    CUSTOM_PATH = FontMagicCustomFonts.PATH
-end
+RefreshCustomPathFromCompanion()
 -- detect whether the BackdropTemplate mixin exists (Retail only)
 local backdropTemplate = (BackdropTemplateMixin and "BackdropTemplate") or nil
 
@@ -763,10 +782,55 @@ end
 local cachedFonts, existsFonts = {}, {}
 local __fmFontCacheId = 0
 local hasCustomFonts = false -- tracks whether any custom font could be loaded
+
+local function RebuildCustomFontCache()
+    local custom = COMBAT_FONT_GROUPS and COMBAT_FONT_GROUPS["Custom"]
+    if type(custom) ~= "table" or type(custom.fonts) ~= "table" then
+        hasCustomFonts = false
+        return
+    end
+
+    RefreshCustomPathFromCompanion()
+    custom.path = CUSTOM_PATH
+
+    cachedFonts["Custom"] = cachedFonts["Custom"] or {}
+    existsFonts["Custom"] = existsFonts["Custom"] or {}
+
+    -- Always clear stale entries first so companion-path changes don't leave
+    -- invalid cache pointers behind.
+    for k in pairs(cachedFonts["Custom"]) do
+        cachedFonts["Custom"][k] = nil
+    end
+    for k in pairs(existsFonts["Custom"]) do
+        existsFonts["Custom"][k] = nil
+    end
+
+    hasCustomFonts = false
+    for _, fname in ipairs(custom.fonts) do
+        local path = custom.path .. fname
+        __fmFontCacheId = __fmFontCacheId + 1
+        local f = CreateFont(addonName .. "CacheFont" .. __fmFontCacheId)
+        local ok = pcall(function() f:SetFont(path, 32, "") end)
+        local loaded = ok and f:GetFont()
+        if loaded and loaded:lower():find(fname:lower(), 1, true) then
+            existsFonts["Custom"][fname] = true
+            cachedFonts["Custom"][fname] = { font = f, path = path }
+            hasCustomFonts = true
+        else
+            existsFonts["Custom"][fname] = false
+        end
+    end
+end
+
 for group, data in pairs(COMBAT_FONT_GROUPS) do
     cachedFonts[group] = {}
     existsFonts[group] = {}
     for _, fname in ipairs(data.fonts) do
+        if group == "Custom" then
+            -- Custom fonts are loaded via the optional companion and are rebuilt
+            -- through RebuildCustomFontCache() so path changes are handled safely.
+            break
+        end
         local path = data.path .. fname
         __fmFontCacheId = __fmFontCacheId + 1
         local f = CreateFont(addonName .. "CacheFont" .. __fmFontCacheId)
@@ -777,14 +841,13 @@ for group, data in pairs(COMBAT_FONT_GROUPS) do
         if loaded and loaded:lower():find(fname:lower(), 1, true) then
             existsFonts[group][fname] = true
             cachedFonts[group][fname] = { font = f, path = path }
-            if group == "Custom" then
-                hasCustomFonts = true
-            end
         else
             existsFonts[group][fname] = false
         end
     end
 end
+
+RebuildCustomFontCache()
 
 local originalInfo = {}
 
@@ -5574,6 +5637,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
             ApplyFloatingTextMotionSettings()
+        end
+
+        if arg1 == CUSTOM_ADDON then
+            -- Companion addon may load after FontMagic (Load on Demand, manual load,
+            -- or client startup order differences). Rebuild the Custom cache so the
+            -- dropdown reflects the newly available fonts immediately.
+            RebuildCustomFontCache()
+            if frame and frame.IsShown and frame:IsShown() then
+                RefreshDropdownLabelsFromSavedSelection()
+            end
         end
 
         -- If Blizzard_CombatText loads after us, re-apply incoming overrides (if any).

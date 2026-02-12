@@ -2,3 +2,4 @@
 2) Keyboard navigation between main dropdown groups (Tab/Shift-Tab/arrow) with zero-taint handling.
 3) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
 4) Add lightweight API-availability badges to combat controls for faster troubleshooting.
+5) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
