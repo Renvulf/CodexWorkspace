@@ -1557,7 +1557,8 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
 
     -- Endpoint snapping uses half-step tolerance so users can always reach
     -- exact min/max even when drag updates jitter around the ends.
-    local epsilon = math.max(step * 0.5, 0.000001)
+    local range = math.max(maxVal - minVal, 0)
+    local epsilon = math.max(math.min(step * 0.5, range * 0.5), 0.000001)
     if math.abs(v - minVal) <= epsilon then
         return minVal
     end
@@ -1572,6 +1573,20 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
     local mult = 10 ^ precision
     snapped = math.floor(snapped * mult + 0.5) / mult
     return snapped
+end
+
+local function NormalizeSliderStep(step, minVal, maxVal)
+    local safeStep = tonumber(step)
+    if safeStep == nil or safeStep <= 0 then
+        safeStep = 1
+    end
+
+    local range = math.abs((tonumber(maxVal) or 0) - (tonumber(minVal) or 0))
+    if range > 0 then
+        safeStep = math.min(safeStep, range)
+    end
+
+    return safeStep
 end
 
 local function ResolveNumericRangeFromConsole(name)
@@ -2450,6 +2465,13 @@ for idx, grp in ipairs(order) do
             info.disabled = true
             SafeAddDropDownButton(info, level)
 
+            if grp == "Custom" and not hasCustomFonts then
+                local hint = UIDropDownMenu_CreateInfo()
+                hint.text = "Install the optional addon, add fonts to its Custom folder, then /reload."
+                hint.disabled = true
+                SafeAddDropDownButton(hint, level)
+            end
+
             -- This entry is a disabled placeholder; ensure any recycled menu button
             -- doesn't show a leftover favorite star from a previous dropdown open.
             local mb = GetDropDownListButton(level, buttonIndex + 1)
@@ -2537,7 +2559,8 @@ end
 
 local SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX, SCALE_STEP = 0.5, 5.0, 0.1
 local scaleMin, scaleMax = SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX
-local scaleDecimals = GetSliderDisplayDecimals(SCALE_STEP, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
+local scaleStep = NormalizeSliderStep(SCALE_STEP, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
+local scaleDecimals = GetSliderDisplayDecimals(scaleStep, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
 
 local scaleCVar, scaleCVarCommandType, scaleCVarValue = GetCombatTextScaleCVar()
 local scaleSupported = scaleCVar ~= nil
@@ -2557,7 +2580,7 @@ slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -10)
 
 local function UpdateScale(val)
     if not scaleSupported then return end
-    val = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
+    val = SnapSliderToStep(val, scaleMin, scaleMax, scaleStep)
     ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
     scaleValue:SetText(string.format("%0." .. tostring(scaleDecimals) .. "f", val))
 end
@@ -2569,10 +2592,11 @@ local function RefreshScaleControl()
     if scaleSupported then
         local discoveredMin, discoveredMax = ResolveNumericRange(scaleCVar)
         scaleMin, scaleMax = NormalizeSliderBounds(discoveredMin, discoveredMax, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
-        scaleDecimals = GetSliderDisplayDecimals(SCALE_STEP, scaleMin, scaleMax)
+        scaleStep = NormalizeSliderStep(SCALE_STEP, scaleMin, scaleMax)
+        scaleDecimals = GetSliderDisplayDecimals(scaleStep, scaleMin, scaleMax)
 
         slider:SetMinMaxValues(scaleMin, scaleMax)
-        slider:SetValueStep(SCALE_STEP)
+        slider:SetValueStep(scaleStep)
         SetSliderObeyStepCompat(slider, false)
         local low = _G[slider:GetName() .. "Low"]
         local high = _G[slider:GetName() .. "High"]
@@ -2583,12 +2607,12 @@ local function RefreshScaleControl()
         scaleLabel:SetTextColor(1, 1, 1)
         local currentScale = tonumber(scaleCVarValue)
             or tonumber(GetCVarString(scaleCVar)) or 1.0
-        local snappedScale = SnapSliderToStep(currentScale, scaleMin, scaleMax, SCALE_STEP)
+        local snappedScale = SnapSliderToStep(currentScale, scaleMin, scaleMax, scaleStep)
         slider:SetValue(snappedScale)
         scaleValue:SetText(string.format(scaleEndpointFmt, snappedScale))
         local settingScaleValue = false
         slider:SetScript("OnValueChanged", function(self, val)
-            local snapped = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
+            local snapped = SnapSliderToStep(val, scaleMin, scaleMax, scaleStep)
             if not settingScaleValue and math.abs((tonumber(val) or snapped) - snapped) > 0.00001 then
                 settingScaleValue = true
                 self:SetValue(snapped)
@@ -2598,7 +2622,7 @@ local function RefreshScaleControl()
             UpdateScale(snapped)
         end)
         slider:SetScript("OnMouseUp", function(self)
-            local snapped = SnapSliderToStep(self:GetValue(), scaleMin, scaleMax, SCALE_STEP)
+            local snapped = SnapSliderToStep(self:GetValue(), scaleMin, scaleMax, scaleStep)
             self:SetValue(snapped)
             UpdateScale(snapped)
         end)
@@ -3609,6 +3633,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     if enabled == nil then enabled = true end
     if liveApply == nil then liveApply = true end
     minVal, maxVal = NormalizeSliderBounds(minVal, maxVal, 0, 1)
+    step = NormalizeSliderStep(step, minVal, maxVal)
 
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
