@@ -209,6 +209,7 @@ end
 -- and fall back to traditional CVar queries otherwise.
 
 local _consoleCommandIndex = nil  -- [commandName] = commandType (0 == CVar)
+local _consoleCommandMeta = nil   -- [commandName] = { commandType = number|nil, minValue = number|nil, maxValue = number|nil }
 
 local function BuildConsoleCommandIndex()
     if _consoleCommandIndex then
@@ -216,6 +217,7 @@ local function BuildConsoleCommandIndex()
     end
 
     _consoleCommandIndex = {}
+    _consoleCommandMeta = {}
 
     local getAll = nil
     if type(C_Console) == "table" and type(C_Console.GetAllCommands) == "function" then
@@ -233,10 +235,20 @@ local function BuildConsoleCommandIndex()
                     local ct = info.commandType
                     if type(name) == "string" then
                         _consoleCommandIndex[name] = ct
+                        _consoleCommandMeta[name] = {
+                            commandType = ct,
+                            minValue = tonumber(info.minValue),
+                            maxValue = tonumber(info.maxValue),
+                        }
                     end
                 elseif type(info) == "string" then
                     -- Very old clients sometimes return names only; assume CVar.
                     _consoleCommandIndex[info] = 0
+                    _consoleCommandMeta[info] = {
+                        commandType = 0,
+                        minValue = nil,
+                        maxValue = nil,
+                    }
                 end
             end
         end
@@ -247,6 +259,7 @@ end
 
 local function RefreshConsoleCommandIndex()
     _consoleCommandIndex = nil
+    _consoleCommandMeta = nil
     return BuildConsoleCommandIndex()
 end
 
@@ -1712,28 +1725,15 @@ end
 local function ResolveNumericRangeFromConsole(name)
     if type(name) ~= "string" or name == "" then return nil, nil end
 
-    local getAll = nil
-    if type(C_Console) == "table" and type(C_Console.GetAllCommands) == "function" then
-        getAll = C_Console.GetAllCommands
-    elseif type(ConsoleGetAllCommands) == "function" then
-        getAll = ConsoleGetAllCommands
-    end
-    if not getAll then return nil, nil end
+    local idx = BuildConsoleCommandIndex()
+    if type(idx) ~= "table" or idx[name] == nil then return nil, nil end
 
-    local ok, list = pcall(getAll)
-    if not ok or type(list) ~= "table" then return nil, nil end
-
-    for _, info in ipairs(list) do
-        if type(info) == "table" then
-            local commandName = info.command or info.name
-            if commandName == name then
-                local lo = tonumber(info.minValue)
-                local hi = tonumber(info.maxValue)
-                if lo ~= nil and hi ~= nil and hi >= lo then
-                    return lo, hi
-                end
-                break
-            end
+    local meta = type(_consoleCommandMeta) == "table" and _consoleCommandMeta[name] or nil
+    if type(meta) == "table" then
+        local lo = tonumber(meta.minValue)
+        local hi = tonumber(meta.maxValue)
+        if lo ~= nil and hi ~= nil and hi >= lo then
+            return lo, hi
         end
     end
 
@@ -2964,9 +2964,23 @@ local combatTitle = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal
 combatTitle:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -8)
 combatTitle:SetText("Combat Text Options")
 
+combatMetadataRefreshBtn = CreateFrame("Button", nil, combatPanel, "UIPanelButtonTemplate")
+combatMetadataRefreshBtn:SetSize(130, 20)
+combatMetadataRefreshBtn:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -10, -6)
+combatMetadataRefreshBtn:SetText("Refresh setting data")
+combatMetadataRefreshBtn:SetScript("OnClick", function()
+    RefreshCombatMetadataAndUI()
+end)
+AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed.")
+
+combatMetadataStatusFS = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+combatMetadataStatusFS:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -24)
+combatMetadataStatusFS:SetPoint("RIGHT", combatMetadataRefreshBtn, "LEFT", -8, 0)
+combatMetadataStatusFS:SetJustifyH("LEFT")
+combatMetadataStatusFS:SetText("If any slider range looks incorrect, click Refresh setting data once.")
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
-combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -30)
+combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -50)
 combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -30, 10)
 
 local combatContent = CreateFrame("Frame", nil, combatScroll)
@@ -3634,6 +3648,9 @@ end
 
 local combatWidgets = {}
 local BuildCombatOptionsUI
+local RefreshCombatMetadataAndUI
+local combatMetadataStatusFS
+local combatMetadataRefreshBtn
 
 local function ClearCombatWidgets()
     for _, w in ipairs(combatWidgets) do
@@ -4246,6 +4263,15 @@ end
 local function RefreshCombatTextCVars()
     if combatPanel and combatPanel:IsShown() then
         BuildCombatOptionsUI()
+    end
+end
+
+RefreshCombatMetadataAndUI = function()
+    RefreshConsoleCommandIndex()
+    RefreshCombatTextCVars()
+
+    if combatMetadataStatusFS and combatMetadataStatusFS.SetText then
+        combatMetadataStatusFS:SetText("Metadata refreshed for this session.")
     end
 end
 
