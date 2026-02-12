@@ -1,0 +1,8 @@
+FontMagic Next-run candidates
+============================
+
+1) Add a tiny in-UI debug pane (hidden behind a slash command) to show resolved CVar/console names per client for faster support triage.
+2) Audit and normalize tooltip wording/tone across all controls for consistent help text style.
+3) Add a non-invasive UI pass for keyboard/gamepad focus order in the main panel and combat options panel.
+4) Add targeted helper wrappers for GameTooltip usage to centralize nil-safety and reduce repeated guards.
+5) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.
