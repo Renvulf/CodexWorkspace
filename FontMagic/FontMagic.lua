@@ -2530,6 +2530,11 @@ for idx, grp in ipairs(order) do
             -- This entry is a disabled placeholder; ensure any recycled menu button
             -- doesn't show a leftover favorite star from a previous dropdown open.
             ClearDropDownButtonsFrom(level, buttonIndex + 1)
+        else
+            -- Even when this menu has entries, UIDropDownMenu may recycle extra
+            -- buttons from previous opens. Clear any stale hover-preview/favorite
+            -- handlers from the unused tail so rows never retain old behavior.
+            ClearDropDownButtonsFrom(level, buttonIndex + 1)
         end
     end)
 end

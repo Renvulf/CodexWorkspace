@@ -1,0 +1,8 @@
+FontMagic next-run candidates (prioritized)
+
+1) Add a tiny in-panel 'data refreshed' timestamp/indicator for combat CVars to make pending-vs-live state even clearer.
+2) Consolidate repeated dropdown selection code paths into one helper to reduce maintenance risk.
+3) Add optional out-of-combat deferred apply queue messaging for any future protected-frame interactions.
+4) Audit and normalize tooltip phrasing/punctuation for all controls for fully consistent microcopy.
+5) Evaluate safe one-time layout constants pass for combat subpanel vertical rhythm on very low UI scales.
+6) Add lightweight debug toggle (dev-only) to print resolved console/CVar mappings for troubleshooting client deltas.
