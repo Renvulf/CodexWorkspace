@@ -1583,6 +1583,29 @@ local function __fmAttachHoverPreviewToMenuButton(btn, display, cache)
     end
 end
 
+local function __fmClearMenuButtonHoverPreview(btn)
+    if not btn then return end
+    btn.__fmHoverPrevName  = nil
+    btn.__fmHoverPrevPath  = nil
+    btn.__fmHoverPrevFlags = nil
+end
+
+local function __fmClearMenuButtonFavoriteDecorations(btn)
+    if not btn then return end
+    if btn.__fmStar then
+        UpdateFavoriteStar(btn, nil)
+    end
+end
+
+local function GetCurrentPreviewFontPath()
+    local key = pendingFont or (FontMagicDB and FontMagicDB.selectedFont)
+    local path = ResolveFontPathFromKey(key)
+    if type(path) == "string" and path ~= "" then
+        return path
+    end
+    return DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH
+end
+
 -- Ensure we never leave the hover preview orphaned if menus close without an OnLeave (rare but possible).
 if type(hooksecurefunc) == "function" then
     if type(CloseDropDownMenus) == "function" then
@@ -3118,7 +3141,7 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     return cb
 end
 
-local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint)
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint, hoverPreviewBuilder)
     if enabled == nil then enabled = true end
 
     local title = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -3135,6 +3158,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     UIDropDownMenu_Initialize(dd, function(self, level)
         level = level or 1
         if level ~= 1 then return end
+        local buttonIndex = 0
         for _, infoData in ipairs(values) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = infoData.text
@@ -3146,6 +3170,26 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
                 BuildCombatOptionsUI()
             end
             SafeAddDropDownButton(info, level)
+
+            buttonIndex = buttonIndex + 1
+            local mb = GetDropDownListButton(level, buttonIndex)
+            if mb then
+                __fmClearMenuButtonFavoriteDecorations(mb)
+
+                local hoverDisplay, hoverPath, hoverFlags
+                if type(hoverPreviewBuilder) == "function" then
+                    hoverDisplay, hoverPath, hoverFlags = hoverPreviewBuilder(infoData)
+                end
+
+                if type(hoverPath) == "string" and hoverPath ~= "" then
+                    __fmAttachHoverPreviewToMenuButton(mb, hoverDisplay or infoData.text, {
+                        path = hoverPath,
+                        flags = hoverFlags,
+                    })
+                else
+                    __fmClearMenuButtonHoverPreview(mb)
+                end
+            end
         end
     end)
 
@@ -3370,7 +3414,21 @@ BuildCombatOptionsUI = function()
         FontMagicDB.scrollingTextOutlineMode = val
         ApplySavedCombatFont()
         RefreshPreviewRendering()
-    end, "Choose the font edge style for scrolling combat text.", FontMagicDB and FontMagicDB.applyToScrollingText, "Enable 'Apply to scrolling combat text' to change this setting.")
+    end,
+    "Choose the font edge style for scrolling combat text.",
+    FontMagicDB and FontMagicDB.applyToScrollingText,
+    "Enable 'Apply to scrolling combat text' to change this setting.",
+    function(infoData)
+        local path = GetCurrentPreviewFontPath()
+        local flags = ""
+        if infoData and (infoData.value == "OUTLINE" or infoData.value == "THICKOUTLINE") then
+            flags = infoData.value
+        end
+        if FontMagicDB and FontMagicDB.scrollingTextMonochrome then
+            flags = (flags ~= "") and (flags .. ",MONOCHROME") or "MONOCHROME"
+        end
+        return "12345", path, flags
+    end)
 
     local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
