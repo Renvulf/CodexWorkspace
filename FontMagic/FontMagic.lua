@@ -1287,6 +1287,43 @@ local function SetDropdownTextCompat(dd, text)
     end
 end
 
+local function InitDropdownCompat(dd, initFn)
+    if not dd or type(initFn) ~= "function" then return false end
+    if type(UIDropDownMenu_Initialize) ~= "function" then
+        return false
+    end
+    local ok = pcall(UIDropDownMenu_Initialize, dd, initFn)
+    return ok
+end
+
+local function SetDropdownWidthCompat(dd, width)
+    if not dd or type(width) ~= "number" then return false end
+    if type(UIDropDownMenu_SetWidth) == "function" then
+        local ok = pcall(UIDropDownMenu_SetWidth, dd, width)
+        if ok then return true end
+    end
+    if dd.SetWidth then
+        dd:SetWidth(width)
+        return true
+    end
+    return false
+end
+
+local function ApplyBackdropCompat(target, backdrop, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
+    if not target then return false end
+    if target.SetBackdrop then
+        target:SetBackdrop(backdrop)
+        if target.SetBackdropColor then
+            target:SetBackdropColor(bgR, bgG, bgB, bgA)
+        end
+        if borderR ~= nil and target.SetBackdropBorderColor then
+            target:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
+        end
+        return true
+    end
+    return false
+end
+
 -- 3) COMMON WIDGET HELPERS ---------------------------------------------------
 local _cbId = 0
 
@@ -2553,7 +2590,7 @@ for idx, grp in ipairs(order) do
     -- up symmetrically across the options window.  Without this adjustment
     -- the rightmost dropdown sits flush against the frame border.
     dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row*50) + 8)
-    UIDropDownMenu_SetWidth(dd, DD_WIDTH)
+    SetDropdownWidthCompat(dd, DD_WIDTH)
     dropdowns[grp] = dd
     if idx == #order then
         lastDropdown = dd -- remember last dropdown for layout anchoring
@@ -2580,7 +2617,7 @@ for idx, grp in ipairs(order) do
         dd:SetScript("OnLeave", HideTooltip)
     end
 
-    UIDropDownMenu_Initialize(dd, function()
+    InitDropdownCompat(dd, function()
         local level = UIDROPDOWNMENU_MENU_LEVEL or 1
         ClearDropDownListDecorations(level)
         local added = false
@@ -2871,16 +2908,14 @@ local previewBox = CreateFrame("Frame", addonName .. "PreviewBox", frame, backdr
 previewBox:SetSize(PREVIEW_W, PREVIEW_BOX_H)
 previewBox:ClearAllPoints()
 previewBox:SetPoint("TOP", slider, "BOTTOM", 0, -30)
-previewBox:SetBackdrop({
+ApplyBackdropCompat(previewBox, {
     bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile     = true, tileSize = 16,
     edgeSize = 12,
     insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-})
+}, 0, 0, 0, 0.55, 0.35, 0.35, 0.35, 1)
 -- Darker preview background improves contrast against bright scenes.
-previewBox:SetBackdropColor(0, 0, 0, 0.55)
-previewBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
 
 -- Font name label above the preview box (renders using the selected font)
 previewHeaderFS = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3014,14 +3049,13 @@ combatPanel:ClearAllPoints()
 combatPanel:SetPoint("TOPLEFT", frame, "TOPRIGHT", PANEL_GAP, -HEADER_H)
 combatPanel:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", PANEL_GAP, 80) -- leave room for the expand toggle above Close
 combatPanel:SetWidth(RIGHT_PANEL_W)
-combatPanel:SetBackdrop({
+ApplyBackdropCompat(combatPanel, {
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 12,
     insets = { left = 3, right = 3, top = 3, bottom = 3 }
-})
+}, 0, 0, 0, 0.92)
 -- Darker/less translucent so the list remains readable over bright scenes.
-combatPanel:SetBackdropColor(0, 0, 0, 0.92)
 combatPanel:SetFrameStrata("HIGH")
 combatPanel:SetFrameLevel((frame:GetFrameLevel() or 0) + 40)
 combatPanel:Hide()
@@ -3850,8 +3884,8 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
 
     local dd = CreateFrame("Frame", nil, combatContent, "UIDropDownMenuTemplate")
     dd:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -14, -4)
-    UIDropDownMenu_SetWidth(dd, CB_COL_W * 2 + CHECK_COL_GAP - 48)
-    UIDropDownMenu_Initialize(dd, function(self, level)
+    SetDropdownWidthCompat(dd, CB_COL_W * 2 + CHECK_COL_GAP - 48)
+    InitDropdownCompat(dd, function(self, level)
         level = level or 1
         if level ~= 1 then return end
         ClearDropDownListDecorations(level)
@@ -4584,17 +4618,13 @@ resetDialog:SetFrameStrata("DIALOG")
 resetDialog:SetToplevel(true)
 resetDialog:SetSize(420, 220)
 resetDialog:SetPoint("CENTER")
-resetDialog:SetBackdrop({
+ApplyBackdropCompat(resetDialog, {
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true, tileSize = 32, edgeSize = 32,
     insets = { left = 8, right = 8, top = 8, bottom = 8 }
-})
+}, 0, 0, 0, 0.95, 0.8, 0.8, 0.8, 1)
 -- More opaque so the dialog remains readable when something bright is behind it.
-resetDialog:SetBackdropColor(0, 0, 0, 0.95)
-if resetDialog.SetBackdropBorderColor then
-    resetDialog:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
-end
 resetDialog:EnableMouse(true)
 resetDialog:SetMovable(true)
 resetDialog:RegisterForDrag("LeftButton")
