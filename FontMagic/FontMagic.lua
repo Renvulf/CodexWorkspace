@@ -2503,14 +2503,10 @@ for idx, grp in ipairs(order) do
     if grp == "Custom" then
         dd:SetScript("OnEnter", function(self)
             if not hasCustomFonts then
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText("Custom fonts are provided by the optional FontMagicCustomFonts addon.")
-                GameTooltip:AddLine("", 1, 1, 1)
-                GameTooltip:AddLine(GetCustomFontsInstallHint(), 0.9, 0.9, 0.9, true)
-                GameTooltip:Show()
+                ShowTooltip(self, "ANCHOR_RIGHT", "Custom fonts are provided by the optional FontMagicCustomFonts addon.", GetCustomFontsInstallHint())
             end
         end)
-        dd:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        dd:SetScript("OnLeave", HideTooltip)
     end
 
     UIDropDownMenu_Initialize(dd, function()
@@ -2937,13 +2933,9 @@ UpdateExpandToggleText()
 expandBtn:SetFrameStrata("HIGH")
 expandBtn:SetFrameLevel((frame:GetFrameLevel() or 0) + 50)
 expandBtn:SetScript("OnEnter", function(self)
-    if GameTooltip then
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(isExpanded and "Combat Text Options <" or "Combat Text Options >", 1, 1, 1, 1, true)
-        GameTooltip:Show()
-    end
+    ShowTooltip(self, "ANCHOR_RIGHT", isExpanded and "Combat Text Options <" or "Combat Text Options >")
 end)
-expandBtn:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+expandBtn:SetScript("OnLeave", HideTooltip)
 
 -- Container + scroll area (hidden when collapsed)
 local combatPanel = CreateFrame("Frame", addonName .. "CombatPanel", frame, backdropTemplate)
@@ -3243,17 +3235,28 @@ local function GetLiveBoolCVar(name)
     return (v == "1" or v == "true" or v == "on")
 end
 
+local function ShowTooltip(owner, anchor, header, body)
+    if not (GameTooltip and owner) then return end
+    GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
+    GameTooltip:SetText(header or "", 1, 1, 1, 1, true)
+    if body and body ~= "" then
+        GameTooltip:AddLine(body, 0.9, 0.9, 0.9, true)
+    end
+    GameTooltip:Show()
+end
+
+local function HideTooltip()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
+end
+
 local function AttachTooltip(widget, header, body)
-    if not GameTooltip then return end
+    if not widget then return end
     widget:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(header or "", 1, 1, 1, 1, true)
-        if body and body ~= "" then
-            GameTooltip:AddLine(body, nil, nil, nil, true)
-        end
-        GameTooltip:Show()
+        ShowTooltip(self, "ANCHOR_RIGHT", header, body)
     end)
-    widget:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    widget:SetScript("OnLeave", HideTooltip)
 end
 
 -- Incoming damage/healing toggles (implemented via COMBAT_TEXT_TYPE_INFO filtering where available)
@@ -4770,11 +4773,9 @@ end
 closeBtn:SetText("Close")
 closeBtn:SetScript("OnClick", function() frame:Hide() end)
 closeBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Close this window", nil, nil, nil, nil, true)
-    GameTooltip:Show()
+    ShowTooltip(self, "ANCHOR_RIGHT", "Close this window")
 end)
-closeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+closeBtn:SetScript("OnLeave", HideTooltip)
 
 -- 12) SLASH COMMANDS & DROPDOWN
 SLASH_FCT1, SLASH_FCT2 = "/FCT", "/fct"
@@ -5039,16 +5040,12 @@ minimapButton:SetScript("OnDragStop", function(self)
 end)
 
 minimapButton:SetScript("OnEnter", function(self)
-    if GameTooltip then
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:SetText("FontMagic", 1, 1, 1)
-        GameTooltip:Show()
-    end
+    ShowTooltip(self, "ANCHOR_LEFT", "FontMagic")
     if ring then ring:SetAlpha(1.0) end
     if iconTex then iconTex:SetAlpha(1.0) end
 end)
 minimapButton:SetScript("OnLeave", function()
-    if GameTooltip then GameTooltip:Hide() end
+    HideTooltip()
     if ring then ring:SetAlpha(0.85) end
     if iconTex then iconTex:SetAlpha(0.95) end
 end)
