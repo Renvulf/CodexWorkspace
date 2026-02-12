@@ -538,7 +538,9 @@ end
 --]]
 
 -- SavedDB defaults
-if not FontMagicDB then
+local FM_DB_SCHEMA_VERSION = 1
+
+if type(FontMagicDB) ~= "table" then
     -- Default placement for the minimap button is the bottom-left corner
     -- (approximately 225 degrees around the minimap).  This avoids the
     -- initial position being hidden beneath default UI elements on a fresh
@@ -553,13 +555,29 @@ elseif FontMagicDB.minimapHide == nil then
     -- Ensure the hide flag exists for old DB versions
     FontMagicDB.minimapHide = false
 end
--- Favorites (account-wide): a set of saved font keys like "Fun/Pepsi.ttf".
--- Stored in the main DB so favorites persist across characters.
-if type(FontMagicDB.favorites) ~= "table" then
-    FontMagicDB.favorites = {}
+
+if type(FontMagicDB.schemaVersion) ~= "number" then
+    FontMagicDB.schemaVersion = FM_DB_SCHEMA_VERSION
+elseif FontMagicDB.schemaVersion < FM_DB_SCHEMA_VERSION then
+    -- Reserved migration hook for future schema upgrades.
+    FontMagicDB.schemaVersion = FM_DB_SCHEMA_VERSION
 end
 
-FontMagicPCDB = FontMagicPCDB or {}
+local function EnsureTableField(tbl, key)
+    if type(tbl) ~= "table" then return {} end
+    if type(tbl[key]) ~= "table" then
+        tbl[key] = {}
+    end
+    return tbl[key]
+end
+
+-- Favorites (account-wide): a set of saved font keys like "Fun/Pepsi.ttf".
+-- Stored in the main DB so favorites persist across characters.
+EnsureTableField(FontMagicDB, "favorites")
+
+if type(FontMagicPCDB) ~= "table" then
+    FontMagicPCDB = {}
+end
 
 -- forward declare so slash commands can toggle visibility before creation
 local minimapButton
@@ -567,9 +585,9 @@ local minimapButton
 -- Combat text settings are account-wide in WoW (CVars), so store overrides account-wide too.
 -- These are treated as *overrides*: if a value is absent/nil, FontMagic will not change the
 -- game's setting and the UI will simply reflect whatever WoW is currently set to.
-if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides = {} end
-if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
-if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
+EnsureTableField(FontMagicDB, "combatOverrides")
+EnsureTableField(FontMagicDB, "extraCombatOverrides")
+EnsureTableField(FontMagicDB, "incomingOverrides")
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
 
 -- Combat font targeting/rendering defaults.
