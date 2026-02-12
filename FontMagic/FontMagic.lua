@@ -1392,6 +1392,10 @@ local pendingFont
 local SyncPreviewToAppliedFont
 local UpdatePendingStateText
 local RefreshPreviewTextFromEditBox
+local BuildCombatOptionsUI
+local RefreshCombatMetadataAndUI
+local combatMetadataStatusFS
+local combatMetadataRefreshBtn
 
 
 -- Favorites helpers ---------------------------------------------------------
@@ -3016,6 +3020,8 @@ local isExpanded = false
 local RIGHT_PANEL_W = PREVIEW_W + 52
 local PANEL_GAP = 16
 local incomingInit = false
+local combatPanelDirty = true
+local combatPanelBuildQueued = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
@@ -3059,7 +3065,14 @@ ApplyBackdropCompat(combatPanel, {
 combatPanel:SetFrameStrata("HIGH")
 combatPanel:SetFrameLevel((frame:GetFrameLevel() or 0) + 40)
 combatPanel:Hide()
-
+combatPanel:SetScript("OnShow", function()
+    if combatPanelDirty and BuildCombatOptionsUI then
+        BuildCombatOptionsUI()
+    end
+end)
+combatPanel:SetScript("OnHide", function()
+    combatPanelBuildQueued = false
+end)
 
 local combatPopShadow = frame:CreateTexture(nil, "BACKGROUND")
 combatPopShadow:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", -PANEL_GAP, 0)
@@ -3084,7 +3097,7 @@ combatMetadataRefreshBtn:SetSize(130, 20)
 combatMetadataRefreshBtn:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -10, -6)
 combatMetadataRefreshBtn:SetText("Refresh setting data")
 combatMetadataRefreshBtn:SetScript("OnClick", function()
-    RefreshCombatMetadataAndUI()
+    if RefreshCombatMetadataAndUI then RefreshCombatMetadataAndUI() end
 end)
 AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed.")
 
@@ -3773,10 +3786,6 @@ end
 -- ---------------------------------------------------------------------------
 
 local combatWidgets = {}
-local BuildCombatOptionsUI
-local RefreshCombatMetadataAndUI
-local combatMetadataStatusFS
-local combatMetadataRefreshBtn
 
 local function ReleaseCombatWidget(w)
     if not w then return end
@@ -4143,6 +4152,7 @@ CollectExtraBoolCombatTextCVars = function()
 end
 
 BuildCombatOptionsUI = function()
+    combatPanelDirty = false
     local previousScroll = 0
     if combatScroll and combatScroll.GetVerticalScroll then
         previousScroll = tonumber(combatScroll:GetVerticalScroll()) or 0
@@ -4440,15 +4450,42 @@ BuildCombatOptionsUI = function()
 end
 
 
-local function RefreshCombatTextCVars()
-    if combatPanel and combatPanel:IsShown() then
-        BuildCombatOptionsUI()
+local function RefreshCombatTextCVars(force)
+    local shouldForce = (force and true or false)
+    combatPanelDirty = true
+
+    if not (combatPanel and combatPanel.IsShown and combatPanel:IsShown()) then
+        return
+    end
+
+    if shouldForce then
+        if BuildCombatOptionsUI then BuildCombatOptionsUI() end
+        return
+    end
+
+    if combatPanelBuildQueued then
+        return
+    end
+
+    combatPanelBuildQueued = true
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        C_Timer.After(0, function()
+            combatPanelBuildQueued = false
+            if combatPanel and combatPanel.IsShown and combatPanel:IsShown() and combatPanelDirty and BuildCombatOptionsUI then
+                BuildCombatOptionsUI()
+            end
+        end)
+    else
+        combatPanelBuildQueued = false
+        if combatPanel and combatPanel.IsShown and combatPanel:IsShown() and combatPanelDirty and BuildCombatOptionsUI then
+            BuildCombatOptionsUI()
+        end
     end
 end
 
 RefreshCombatMetadataAndUI = function()
     RefreshConsoleCommandIndex()
-    RefreshCombatTextCVars()
+    RefreshCombatTextCVars(true)
 
     if combatMetadataStatusFS and combatMetadataStatusFS.SetText then
         combatMetadataStatusFS:SetText("Metadata refreshed for this session.")
@@ -4464,7 +4501,9 @@ local function SetExpanded(expand)
 
     if isExpanded then
         if combatPanel and combatPanel.Show then combatPanel:Show() end
-        BuildCombatOptionsUI()
+        if combatPanelDirty and BuildCombatOptionsUI then
+            BuildCombatOptionsUI()
+        end
     else
         if combatPanel and combatPanel.Hide then combatPanel:Hide() end
     end
