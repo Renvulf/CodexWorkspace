@@ -1311,6 +1311,41 @@ end
 
 local function ApplyBackdropCompat(target, backdrop, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
     if not target then return false end
+
+    local function EnsureFallbackRegions(frame)
+        if frame.__fmBackdropFallback then return frame.__fmBackdropFallback end
+        if not frame.CreateTexture then return nil end
+
+        local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+        bg:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        bg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+
+        local top = frame:CreateTexture(nil, "BORDER")
+        local bottom = frame:CreateTexture(nil, "BORDER")
+        local left = frame:CreateTexture(nil, "BORDER")
+        local right = frame:CreateTexture(nil, "BORDER")
+
+        top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+        bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+        bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+        left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+        right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+        right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+
+        frame.__fmBackdropFallback = { bg = bg, top = top, bottom = bottom, left = left, right = right }
+        return frame.__fmBackdropFallback
+    end
+
+    local function HideFallback(frame)
+        local fb = frame and frame.__fmBackdropFallback
+        if not fb then return end
+        for _, tex in pairs(fb) do
+            if tex and tex.Hide then tex:Hide() end
+        end
+    end
+
     if target.SetBackdrop then
         target:SetBackdrop(backdrop)
         if target.SetBackdropColor then
@@ -1319,9 +1354,49 @@ local function ApplyBackdropCompat(target, backdrop, bgR, bgG, bgB, bgA, borderR
         if borderR ~= nil and target.SetBackdropBorderColor then
             target:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
         end
+        HideFallback(target)
         return true
     end
+
+    local fb = EnsureFallbackRegions(target)
+    if not fb then return false end
+
+    local edgeSize = (type(backdrop) == "table" and tonumber(backdrop.edgeSize)) or 1
+    edgeSize = ClampNumber(edgeSize, 1, 12)
+    fb.top:SetHeight(edgeSize)
+    fb.bottom:SetHeight(edgeSize)
+    fb.left:SetWidth(edgeSize)
+    fb.right:SetWidth(edgeSize)
+
+    fb.bg:SetColorTexture(bgR or 0, bgG or 0, bgB or 0, bgA or 0)
+
+    local br = (borderR ~= nil) and borderR or 0.35
+    local bg = (borderG ~= nil) and borderG or 0.35
+    local bb = (borderB ~= nil) and borderB or 0.35
+    local ba = (borderA ~= nil) and borderA or 1
+    fb.top:SetColorTexture(br, bg, bb, ba)
+    fb.bottom:SetColorTexture(br, bg, bb, ba)
+    fb.left:SetColorTexture(br, bg, bb, ba)
+    fb.right:SetColorTexture(br, bg, bb, ba)
+
+    for _, tex in pairs(fb) do
+        if tex and tex.Show then tex:Show() end
+    end
     return false
+end
+
+local function SetFrameBorderColorCompat(target, r, g, b, a)
+    if not target then return end
+    if target.SetBackdropBorderColor then
+        target:SetBackdropBorderColor(r, g, b, a)
+        return
+    end
+    local fb = target.__fmBackdropFallback
+    if not fb then return end
+    if fb.top then fb.top:SetColorTexture(r, g, b, a) end
+    if fb.bottom then fb.bottom:SetColorTexture(r, g, b, a) end
+    if fb.left then fb.left:SetColorTexture(r, g, b, a) end
+    if fb.right then fb.right:SetColorTexture(r, g, b, a) end
 end
 
 -- 3) COMMON WIDGET HELPERS ---------------------------------------------------
@@ -2035,19 +2110,13 @@ local function __fmEnsureHoverPreviewFrame()
     f:SetClampedToScreen(true)
     f:EnableMouse(false)
 
-    if f.SetBackdrop then
-        f:SetBackdrop({
-            bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile     = true, tileSize = 16,
-            edgeSize = 12,
-            insets   = { left = 3, right = 3, top = 3, bottom = 3 },
-        })
-        f:SetBackdropColor(0, 0, 0, 0.92)
-        if f.SetBackdropBorderColor then
-            f:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-        end
-    end
+    ApplyBackdropCompat(f, {
+        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile     = true, tileSize = 16,
+        edgeSize = 12,
+        insets   = { left = 3, right = 3, top = 3, bottom = 3 },
+    }, 0, 0, 0, 0.92, 0.35, 0.35, 0.35, 1)
 
     local fs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     fs:ClearAllPoints()
@@ -2975,14 +3044,10 @@ editBox:SetScript("OnTabPressed", function(self)
     self:ClearFocus()
 end)
 editBox:SetScript("OnEditFocusGained", function()
-    if previewBox and previewBox.SetBackdropBorderColor then
-        previewBox:SetBackdropBorderColor(1, 0.82, 0.22, 1)
-    end
+    SetFrameBorderColorCompat(previewBox, 1, 0.82, 0.22, 1)
 end)
 editBox:SetScript("OnEditFocusLost", function()
-    if previewBox and previewBox.SetBackdropBorderColor then
-        previewBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
-    end
+    SetFrameBorderColorCompat(previewBox, 0.35, 0.35, 0.35, 1)
 end)
 
 RefreshPreviewTextFromEditBox = function()
