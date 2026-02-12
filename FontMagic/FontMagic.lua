@@ -1269,6 +1269,7 @@ local mainShowCombatTextCB
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
 local SyncPreviewToAppliedFont
+local UpdatePendingStateText
 
 
 -- Favorites helpers ---------------------------------------------------------
@@ -1319,6 +1320,7 @@ local function SelectFontKey(key)
     end
 
     pendingFont = key
+    if UpdatePendingStateText then UpdatePendingStateText() end
 
     -- Prefer updating the dropdown that is currently open (if it's ours), otherwise the group dropdown.
     local targetDD
@@ -1447,6 +1449,7 @@ local function AttachFavoriteStar(menuButton)
 
             if pendingFont == key then
                 pendingFont = nil
+                if UpdatePendingStateText then UpdatePendingStateText() end
             end
 
             if shouldClear and dropdowns and dropdowns["Favorites"] then
@@ -2522,6 +2525,7 @@ for idx, grp in ipairs(order) do
                     for g2, d2 in pairs(dropdowns) do UIDropDownMenu_SetText(d2, "Select Font") end
                     -- store the selected font locally until the user clicks Apply
                     pendingFont = item.key
+                    if UpdatePendingStateText then UpdatePendingStateText() end
                     UIDropDownMenu_SetText(dd, item.display .. " (" .. item.grp .. ")")
                     SetPreviewFont(cache)
                     if UpdatePreviewHeaderText then UpdatePreviewHeaderText(item.display, cache.path, false) end
@@ -2558,6 +2562,7 @@ for idx, grp in ipairs(order) do
                         for g2, d2 in pairs(dropdowns) do UIDropDownMenu_SetText(d2, "Select Font") end
                         -- store the selected font locally until the user clicks Apply
                         pendingFont = key
+                        if UpdatePendingStateText then UpdatePendingStateText() end
                         UIDropDownMenu_SetText(dd, display)
                         SetPreviewFont(cache)
                         if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, cache.path, false) end
@@ -4306,12 +4311,29 @@ AttachTooltip(mainShowCombatTextCB, "Show Combat Text",
     "Shows or hides Blizzard floating combat text without losing your per-type settings.\n\n" ..
     "When you hide it, FontMagic stores your current combat text settings and restores them when you enable it again.")
 
+local pendingStateFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+pendingStateFS:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 34)
+pendingStateFS:SetPoint("RIGHT", applyBtn, "RIGHT", 0, 0)
+pendingStateFS:SetJustifyH("LEFT")
+
+UpdatePendingStateText = function()
+    local selected = FontMagicDB and FontMagicDB.selectedFont
+    local hasPending = type(pendingFont) == "string" and pendingFont ~= "" and pendingFont ~= selected
+    if hasPending then
+        pendingStateFS:SetText("|cffffd200Preview active - click Apply to save|r")
+    else
+        pendingStateFS:SetText("|cff8f8f8fApplied font is up to date|r")
+    end
+end
+UpdatePendingStateText()
+
 applyBtn:SetScript("OnClick", function()
     -- use the pending selection if the user picked a font but hasn't applied yet
     local selection = pendingFont or (FontMagicDB and FontMagicDB.selectedFont)
     if selection and type(selection) == "string" and selection ~= "" then
         FontMagicDB.selectedFont = selection
         pendingFont = nil
+        if UpdatePendingStateText then UpdatePendingStateText() end
 
         local path = ResolveFontPathFromKey(selection)
         if path then
@@ -4344,6 +4366,7 @@ applyBtn:SetScript("OnClick", function()
     if preview and editBox and preview.SetText and editBox.GetText then
         preview:SetText(editBox:GetText() or "")
     end
+    if UpdatePendingStateText then UpdatePendingStateText() end
     print("|cFF00FF00[FontMagic]|r Default combat font restored. Log out to character select and back in to apply.")
 end)
 
@@ -4432,6 +4455,7 @@ local function ResetFontOnly()
     FontMagicPCDB.selectedFont  = nil
 
     pendingFont = nil
+    if UpdatePendingStateText then UpdatePendingStateText() end
 
     -- Ensure we know the true Blizzard defaults for THIS client.
     CaptureBlizzardDefaultFonts()
@@ -4453,8 +4477,6 @@ local function ResetFontOnly()
     SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), defaultPath)
     if UpdatePreviewHeaderText then UpdatePreviewHeaderText("Default", defaultPath, true) end
     __fmRunNextFrame(function()
-        SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), defaultPath)
-    if UpdatePreviewHeaderText then UpdatePreviewHeaderText("Default", defaultPath, true) end
         if preview and editBox and preview.SetText and editBox.GetText then
             preview:SetText(editBox:GetText() or "")
         end
@@ -4754,6 +4776,7 @@ SlashCmdList["FCT"] = function(msg)
     end
 
     pendingFont = nil -- discard any un-applied selection
+    if UpdatePendingStateText then UpdatePendingStateText() end
 
     for g,d in pairs(dropdowns) do UIDropDownMenu_SetText(d, "Select Font") end
     if FontMagicDB.selectedFont then
