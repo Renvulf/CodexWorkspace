@@ -2490,6 +2490,7 @@ end
 
 local SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX, SCALE_STEP = 0.5, 5.0, 0.1
 local scaleMin, scaleMax = SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX
+local scaleDecimals = GetSliderDisplayDecimals(SCALE_STEP, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
 
 local scaleCVar, scaleCVarCommandType, scaleCVarValue = GetCombatTextScaleCVar()
 local scaleSupported = scaleCVar ~= nil
@@ -2511,7 +2512,7 @@ local function UpdateScale(val)
     if not scaleSupported then return end
     val = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
     ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
-    scaleValue:SetText(string.format("%.1f", val))
+    scaleValue:SetText(string.format("%0." .. tostring(scaleDecimals) .. "f", val))
 end
 
 local function RefreshScaleControl()
@@ -2522,24 +2523,32 @@ local function RefreshScaleControl()
         local discoveredMin, discoveredMax = ResolveNumericRange(scaleCVar)
         scaleMin = discoveredMin or SCALE_FALLBACK_MIN
         scaleMax = discoveredMax or SCALE_FALLBACK_MAX
+        scaleDecimals = GetSliderDisplayDecimals(SCALE_STEP, scaleMin, scaleMax)
 
         slider:SetMinMaxValues(scaleMin, scaleMax)
         slider:SetValueStep(SCALE_STEP)
         SetSliderObeyStepCompat(slider, false)
         local low = _G[slider:GetName() .. "Low"]
         local high = _G[slider:GetName() .. "High"]
-        if low then low:SetText(string.format("%.1f", scaleMin)) end
-        if high then high:SetText(string.format("%.1f", scaleMax)) end
+        local scaleEndpointFmt = "%0." .. tostring(scaleDecimals) .. "f"
+        if low then low:SetText(string.format(scaleEndpointFmt, scaleMin)) end
+        if high then high:SetText(string.format(scaleEndpointFmt, scaleMax)) end
         slider:Enable()
         scaleLabel:SetTextColor(1, 1, 1)
         local currentScale = tonumber(scaleCVarValue)
             or tonumber(GetCVarString(scaleCVar)) or 1.0
         local snappedScale = SnapSliderToStep(currentScale, scaleMin, scaleMax, SCALE_STEP)
         slider:SetValue(snappedScale)
-        scaleValue:SetText(string.format("%.1f", snappedScale))
+        scaleValue:SetText(string.format(scaleEndpointFmt, snappedScale))
+        local settingScaleValue = false
         slider:SetScript("OnValueChanged", function(self, val)
             local snapped = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
-            scaleValue:SetText(string.format("%.1f", snapped))
+            if not settingScaleValue and math.abs((tonumber(val) or snapped) - snapped) > 0.00001 then
+                settingScaleValue = true
+                self:SetValue(snapped)
+                settingScaleValue = false
+            end
+            scaleValue:SetText(string.format(scaleEndpointFmt, snapped))
             UpdateScale(snapped)
         end)
         slider:SetScript("OnMouseUp", function(self)
@@ -3638,7 +3647,6 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         if tip then AttachTooltip(s, label, tip .. "\n\n" .. (disabledHint or "Not available on this client.")) end
     end
 
-    table.insert(combatWidgets, valText)
     table.insert(combatWidgets, s)
     return s
 end
@@ -3918,7 +3926,7 @@ BuildCombatOptionsUI = function()
         end,
         "Controls arc intensity while world-space numbers move upward and settle.",
         gravitySupported,
-        nil,
+        "Gravity control is unavailable on this client version.",
         false
     )
 
@@ -3931,7 +3939,7 @@ BuildCombatOptionsUI = function()
         end,
         "Controls how long world-space numbers remain visible before fading.",
         fadeSupported,
-        nil,
+        "Fade duration control is unavailable on this client version.",
         false
     )
 
