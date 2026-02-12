@@ -1700,6 +1700,10 @@ local dropdowns = {}
 local mainShowCombatTextCB
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
+local recentPreviewContainer
+local recentPreviewButtons = {}
+local recentPreviewEntries = {}
+local RECENT_PREVIEW_MAX = 5
 local SyncPreviewToAppliedFont
 local UpdatePendingStateText
 local RefreshPreviewTextFromEditBox
@@ -1772,11 +1776,111 @@ end
 -- Used when a user clicks the favorite star so the UI still previews what they just favorited.
 local SetPreviewFont
 local UpdatePreviewHeaderText
+local SelectFontKey
 -- Incremented on every preview font change. Used to cancel any queued next-frame
 -- sizing pass so a stale preview (e.g. from a font you only *previewed*) can't
 -- overwrite the currently-applied font after the window is closed/reopened.
 local __fmPreviewToken = 0
-local function SelectFontKey(key)
+local function PushRecentPreviewEntry(entry)
+    if type(entry) ~= "table" then return end
+    if type(entry.key) ~= "string" or entry.key == "" then return end
+
+    local normalized = {
+        key = entry.key,
+        display = (type(entry.display) == "string" and entry.display ~= "") and entry.display or entry.key,
+        group = type(entry.group) == "string" and entry.group or nil,
+    }
+
+    for i = #recentPreviewEntries, 1, -1 do
+        local old = recentPreviewEntries[i]
+        if type(old) == "table" and old.key == normalized.key then
+            table.remove(recentPreviewEntries, i)
+        end
+    end
+
+    table.insert(recentPreviewEntries, 1, normalized)
+    while #recentPreviewEntries > RECENT_PREVIEW_MAX do
+        table.remove(recentPreviewEntries)
+    end
+end
+
+local function RefreshRecentPreviewStrip()
+    if not recentPreviewContainer then return end
+
+    local selectedKey = type(FontMagicDB) == "table" and FontMagicDB.selectedFont or nil
+    local pendingKey = pendingFont
+
+    for i = 1, RECENT_PREVIEW_MAX do
+        local btn = recentPreviewButtons[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, recentPreviewContainer, "UIPanelButtonTemplate")
+            btn:SetSize(58, 18)
+            if i == 1 then
+                btn:SetPoint("LEFT", recentPreviewContainer, "LEFT", 0, 0)
+            else
+                btn:SetPoint("LEFT", recentPreviewButtons[i - 1], "RIGHT", 6, 0)
+            end
+            btn:SetScript("OnEnter", function(self)
+                local data = self.__fmRecentEntry
+                if not data then return end
+
+                local currentSelected = type(FontMagicDB) == "table" and FontMagicDB.selectedFont or nil
+                local currentPending = pendingFont
+                local status = "Preview"
+                if data.key and currentPending == data.key then
+                    status = "Pending"
+                elseif data.key and currentSelected == data.key then
+                    status = "Applied"
+                end
+
+                ShowTooltip(self, "ANCHOR_TOP", data.display or "Recent font", string.format("%s\n\nClick to preview this font again.", status))
+            end)
+            btn:SetScript("OnLeave", HideTooltip)
+            btn:SetScript("OnClick", function(self)
+                local data = self.__fmRecentEntry
+                if not (data and data.key and SelectFontKey) then return end
+                SelectFontKey(data.key)
+            end)
+            recentPreviewButtons[i] = btn
+        end
+
+        local data = recentPreviewEntries[i]
+        if data then
+            btn.__fmRecentEntry = data
+            local short = tostring(data.display or data.key)
+            if #short > 10 then
+                short = short:sub(1, 9) .. "…"
+            end
+            btn:SetText(short)
+            btn:Show()
+
+            if data.key and pendingKey == data.key then
+                btn:SetAlpha(1)
+                if btn.GetFontString then
+                    local fs = btn:GetFontString()
+                    if fs and fs.SetTextColor then fs:SetTextColor(1, 0.82, 0.22) end
+                end
+            elseif data.key and selectedKey == data.key then
+                btn:SetAlpha(1)
+                if btn.GetFontString then
+                    local fs = btn:GetFontString()
+                    if fs and fs.SetTextColor then fs:SetTextColor(0.72, 1, 0.72) end
+                end
+            else
+                btn:SetAlpha(0.92)
+                if btn.GetFontString then
+                    local fs = btn:GetFontString()
+                    if fs and fs.SetTextColor then fs:SetTextColor(1, 1, 1) end
+                end
+            end
+        else
+            btn.__fmRecentEntry = nil
+            btn:Hide()
+        end
+    end
+end
+
+SelectFontKey = function(key)
     if type(key) ~= "string" or key == "" then return end
 
     -- Prefer updating the dropdown that is currently open (if it's ours), otherwise the group dropdown.
@@ -1814,16 +1918,22 @@ local function SelectFontKey(key)
         end
 
         local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
+        local resolvedPath
         if cache then
             SetPreviewFont(cache)
+            resolvedPath = cache.path
             if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, cache.path, false) end
         else
             local path = ResolveFontPathFromKey(selectionKey)
             if path then
                 SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), path)
+                resolvedPath = path
                 if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, path, false) end
             end
         end
+
+        PushRecentPreviewEntry({ key = selectionKey, display = display, group = grp, path = resolvedPath })
+        RefreshRecentPreviewStrip()
 
         if RefreshPreviewTextFromEditBox then
             RefreshPreviewTextFromEditBox()
@@ -3333,6 +3443,15 @@ editBox:SetScript("OnEditFocusLost", function()
     SetFrameBorderColorCompat(previewBox, 0.35, 0.35, 0.35, 1)
 end)
 
+recentPreviewContainer = CreateFrame("Frame", nil, frame)
+recentPreviewContainer:SetSize(PREVIEW_W, 18)
+recentPreviewContainer:ClearAllPoints()
+recentPreviewContainer:SetPoint("TOP", editBox, "BOTTOM", 0, -8)
+
+local recentPreviewLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+recentPreviewLabel:SetPoint("BOTTOMLEFT", recentPreviewContainer, "TOPLEFT", 0, 2)
+recentPreviewLabel:SetText("Recent previews")
+
 RefreshPreviewTextFromEditBox = function()
     if editBox and preview and editBox.GetText and preview.SetText then
         local txt = editBox:GetText() or ""
@@ -3376,6 +3495,7 @@ SyncPreviewToAppliedFont = function()
     if preview.SetText and editBox.GetText then
         preview:SetText(editBox:GetText() or "")
     end
+    RefreshRecentPreviewStrip()
 end
 
 frame:SetScript("OnHide", function()
@@ -5146,6 +5266,7 @@ UpdatePendingStateText = function()
         pendingStateFS:SetText("|cff8f8f8fApplied font is up to date|r")
     end
     SetApplyButtonPulse(hasPending)
+    RefreshRecentPreviewStrip()
 end
 UpdatePendingStateText()
 
@@ -5167,6 +5288,7 @@ applyBtn:SetScript("OnClick", function()
             if UIErrorsFrame and UIErrorsFrame.AddMessage then
                 UIErrorsFrame:AddMessage("FontMagic: relog to apply the new combat font.", 1, 1, 0)
             end
+            RefreshRecentPreviewStrip()
         else
             print("|cFFFF3333[FontMagic]|r Could not apply that font (file not found).")
             if UIErrorsFrame and UIErrorsFrame.AddMessage then
@@ -5189,6 +5311,7 @@ applyBtn:SetScript("OnClick", function()
         preview:SetText(editBox:GetText() or "")
     end
     if UpdatePendingStateText then UpdatePendingStateText() end
+    RefreshRecentPreviewStrip()
     print("|cFF00FF00[FontMagic]|r Default combat font restored. Log out to character select and back in to apply.")
 end)
 
