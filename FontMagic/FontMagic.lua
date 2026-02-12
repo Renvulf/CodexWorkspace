@@ -557,6 +557,7 @@ local FM_DB_SCHEMA_VERSION = 2
 local FM_MINIMAP_RADIUS_OFFSET_DEFAULT = 10
 local FM_MINIMAP_RADIUS_OFFSET_MIN = -4
 local FM_MINIMAP_RADIUS_OFFSET_MAX = 28
+local FM_MINIMAP_DRAG_START_THRESHOLD_PX = 8
 
 local function ClampNumber(v, minV, maxV)
     if type(v) ~= "number" then return minV end
@@ -5345,6 +5346,27 @@ local function SafeAtan2(y, x)
 end
 
 local function UpdateMinimapButtonDrag(self)
+    if not self then return end
+
+    local cursorX, cursorY = GetCursorPosition()
+    if not (cursorX and cursorY) then return end
+
+    local screenScale = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+    if screenScale <= 0 then screenScale = 1 end
+
+    -- Prevent accidental drags from slight hand movement on click.
+    if self.__fmDragArmed and (not self.__fmDragStarted) then
+        local sx = self.__fmDragStartCursorX or cursorX
+        local sy = self.__fmDragStartCursorY or cursorY
+        local dx = (cursorX - sx) / screenScale
+        local dy = (cursorY - sy) / screenScale
+        if (dx * dx + dy * dy) < (FM_MINIMAP_DRAG_START_THRESHOLD_PX * FM_MINIMAP_DRAG_START_THRESHOLD_PX) then
+            return
+        end
+        self.__fmDragStarted = true
+        self.__fmSuppressClick = true
+    end
+
     local now = GetTime and GetTime() or 0
     local last = self.__fmLastDragUpdate or 0
     if now > 0 and (now - last) < 0.016 then
@@ -5352,9 +5374,9 @@ local function UpdateMinimapButtonDrag(self)
     end
     self.__fmLastDragUpdate = now
 
-    local mx, my = GetCursorPosition()
     local scale = (Minimap and Minimap.GetEffectiveScale and Minimap:GetEffectiveScale()) or 1
-    mx, my = mx / scale, my / scale
+    if scale <= 0 then scale = 1 end
+    local mx, my = cursorX / scale, cursorY / scale
     local cx, cy = Minimap:GetCenter()
     if not (cx and cy) then return end
     local dx, dy = mx - cx, my - cy
@@ -5362,6 +5384,24 @@ local function UpdateMinimapButtonDrag(self)
     local ang = NormalizeAngleDegrees(math.deg(SafeAtan2(dy, dx)))
     FontMagicDB.minimapAngle = ang
     PositionMinimapButton(self, ang)
+end
+
+local function UpdateMinimapButtonHitRect(btn)
+    if not btn or not btn.SetHitRectInsets then return end
+    local minimapScale = (Minimap and Minimap.GetEffectiveScale and Minimap:GetEffectiveScale()) or 1
+    local localScale = (btn.GetEffectiveScale and btn:GetEffectiveScale()) or minimapScale
+    local effective = localScale
+    if type(effective) ~= "number" or effective <= 0 then
+        effective = minimapScale
+    end
+    if type(effective) ~= "number" or effective <= 0 then
+        effective = 1
+    end
+
+    -- Keep the click/drag target generous at normal scales, but avoid an oversized
+    -- hit region on tiny minimaps where it can cause accidental drags.
+    local inset = math.floor(ClampNumber(6 * effective, 2, 6) + 0.5)
+    btn:SetHitRectInsets(-inset, -inset, -inset, -inset)
 end
 
 local function CreateMinimapButton()
@@ -5395,10 +5435,14 @@ local function CreateMinimapButton()
     -- Use a double-backslash path to avoid Lua escape sequences removing the backslashes.
     minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     minimapButton:EnableMouse(true)
-    minimapButton:SetHitRectInsets(-6, -6, -6, -6)
+    UpdateMinimapButtonHitRect(minimapButton)
     minimapButton:RegisterForClicks("LeftButtonUp")
     minimapButton:RegisterForDrag("LeftButton")
-    minimapButton:SetScript("OnClick", function()
+    minimapButton:SetScript("OnClick", function(self)
+        if self and self.__fmSuppressClick then
+            self.__fmSuppressClick = nil
+            return
+        end
         if SlashCmdList and SlashCmdList["FCT"] then
             SlashCmdList["FCT"]()
         end
@@ -5406,11 +5450,18 @@ local function CreateMinimapButton()
 
     minimapButton:SetScript("OnDragStart", function(self)
         self.isMoving = true
+        self.__fmDragArmed = true
+        self.__fmDragStarted = false
+        self.__fmDragStartCursorX, self.__fmDragStartCursorY = GetCursorPosition()
         self.__fmLastDragUpdate = 0
+        UpdateMinimapButtonHitRect(self)
         self:SetScript("OnUpdate", UpdateMinimapButtonDrag)
     end)
     minimapButton:SetScript("OnDragStop", function(self)
         self.isMoving = false
+        self.__fmDragArmed = false
+        self.__fmDragStarted = false
+        self.__fmDragStartCursorX, self.__fmDragStartCursorY = nil, nil
         self:SetScript("OnUpdate", nil)
         PositionMinimapButton(self, FontMagicDB and FontMagicDB.minimapAngle)
     end)
