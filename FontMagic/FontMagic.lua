@@ -315,6 +315,16 @@ local function ResolveConsoleSetting(cvarOrCandidates)
         return nil, nil
     end
 
+    local function tryFuzzy(name)
+        if type(name) ~= "string" or name == "" then return nil, nil end
+        local base = name:gsub("_[vV]%d+$", "")
+        local bestName, bestCt = FindBestConsoleMatch(base)
+        if bestName then
+            return tryName(bestName)
+        end
+        return nil, nil
+    end
+
     if type(cvarOrCandidates) == "string" then
         local n, ct = tryName(cvarOrCandidates)
         if n then return n, ct end
@@ -340,12 +350,25 @@ local function ResolveConsoleSetting(cvarOrCandidates)
             if n then return n, ct end
         end
 
+        n, ct = tryFuzzy(cvarOrCandidates)
+        if n then return n, ct end
+
+        for _, v in ipairs(variants) do
+            n, ct = tryFuzzy(v)
+            if n then return n, ct end
+        end
+
         return nil, nil
     end
 
     if type(cvarOrCandidates) == "table" then
         for _, candidate in ipairs(cvarOrCandidates) do
             local n, ct = tryName(candidate)
+            if n then return n, ct end
+        end
+
+        for _, candidate in ipairs(cvarOrCandidates) do
+            local n, ct = tryFuzzy(candidate)
             if n then return n, ct end
         end
     end
@@ -3411,24 +3434,24 @@ BuildCombatOptionsUI = function()
 
     y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
 
-    y = AddHeader("Where the selected font is used", y)
+    y = AddHeader("Font application targets", y)
     local applyWorld = FontMagicDB and FontMagicDB.applyToWorldText and true or false
     local applyScrolling = FontMagicDB and FontMagicDB.applyToScrollingText and true or false
 
-    CreateOptionCheckbox(0, y, "Floating numbers in the 3D world", applyWorld, function(self)
+    CreateOptionCheckbox(0, y, "Apply to floating world numbers", applyWorld, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.applyToWorldText = self:GetChecked() and true or false
         ApplySavedCombatFont()
         BuildCombatOptionsUI()
-    end, "When enabled, FontMagic styles damage/heal numbers that appear above characters and creatures in the world.")
+    end, "When enabled, FontMagic updates floating combat numbers above characters and creatures in the game world.")
 
-    CreateOptionCheckbox(1, y, "Scrolling combat text feed", applyScrolling, function(self)
+    CreateOptionCheckbox(1, y, "Apply to scrolling combat text", applyScrolling, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.applyToScrollingText = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
         BuildCombatOptionsUI()
-    end, "When enabled, FontMagic styles Blizzard's scrolling combat text messages around your character.")
+    end, "When enabled, FontMagic updates Blizzard's scrolling combat text near your character.")
 
     y = y - CHECK_ROW_H - 10
 
@@ -3546,14 +3569,14 @@ BuildCombatOptionsUI = function()
         y = y - 20
     end
 
-    CreateOptionSlider(y, "Gravity", "Gravity", 0.00, 2.00, 0.05,
+    CreateOptionSlider(y, "Gravity", "Gravity strength", 0.00, 2.00, 0.05,
         tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
             FontMagicDB.floatingTextGravity = v
             ApplyFloatingTextMotionSettings()
         end,
-        "Controls how strongly floating world numbers curve during their movement.",
+        "Controls arc intensity while floating world numbers rise and settle.",
         gravitySupported
     )
 
