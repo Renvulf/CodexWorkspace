@@ -4070,7 +4070,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
             break
         end
     end
-    UIDropDownMenu_SetText(dd, selectedText)
+    SetDropdownTextCompat(dd, selectedText)
     if not enabled and type(UIDropDownMenu_DisableDropDown) == "function" then
         pcall(UIDropDownMenu_DisableDropDown, dd)
     end
@@ -5231,6 +5231,7 @@ SlashCmdList["FCT"] = function(msg)
         return
     elseif msg == "help" then
         print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">")
+        print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
         return
     end
 
@@ -5249,13 +5250,13 @@ SlashCmdList["FCT"] = function(msg)
         -- parse using the last '/' to support group names that contain
         -- slashes from older categories.
         local grp,fname = FontMagicDB.selectedFont:match("^(.*)/([^/]+)$")
-        if grp and fname and dropdowns[grp] and existsFonts[grp][fname] then
-            UIDropDownMenu_SetText(dropdowns[grp], __fmStripFontExt(fname))
+        if grp and fname and dropdowns[grp] and existsFonts[grp] and existsFonts[grp][fname] then
+            SetDropdownTextCompat(dropdowns[grp], __fmStripFontExt(fname))
             -- If this font is favorited, also reflect it in the Favorites dropdown.
             if dropdowns["Favorites"] and IsFavorite(FontMagicDB.selectedFont) then
-                UIDropDownMenu_SetText(dropdowns["Favorites"], __fmStripFontExt(fname))
+                SetDropdownTextCompat(dropdowns["Favorites"], __fmStripFontExt(fname))
             end
-            local cache = cachedFonts[grp][fname]
+            local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
             if cache then
                 SetPreviewFont(cache)
                 if UpdatePreviewHeaderText then

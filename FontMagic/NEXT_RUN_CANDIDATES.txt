@@ -1,4 +1,4 @@
-1) Consider a compact mode preset for low UI scale users without changing current defaults.
-2) Add optional keyboard navigation between dropdown groups in the main panel (arrow/Tab shortcuts) if it can be done without taint risk.
-3) Audit combat-panel control tooltips for API-unavailable states and standardize disabled-state help text wording.
-4) Add a tiny inline hint near minimap radius command text in /float help output to improve discoverability.
+1) Compact-mode preset for low UI scale users while preserving current default layout.
+2) Keyboard navigation between main dropdown groups (Tab/Shift-Tab/arrow) with zero-taint handling.
+3) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
+4) Add lightweight API-availability badges to combat controls for faster troubleshooting.
