@@ -1,6 +1,6 @@
-1) Add a tiny in-panel status line for deferred writes when in combat lockdown (future-proof if any related setter becomes protected).
-2) Centralize repeated "Select Font" dropdown label resets into one helper to reduce state-drift risk.
-3) Normalize tooltip phrasing/capitalization across combat options for tighter UX consistency.
-4) Add a guarded metadata refresh hook so motion/scale slider bounds can refresh after late client command table updates.
-5) Review minimap icon drag clamping at non-1.0 UI scales to avoid edge clipping.
-6) Add an optional debug slash output (off by default) for resolved CVar/console targets used by this client.
+1) Add a compact "pending changes" status line in the main panel so users can immediately tell preview-only vs applied state.
+2) Consolidate dropdown row construction into one helper (favorites + normal groups) to reduce duplicate logic and future drift.
+3) Add a small compatibility wrapper for Settings category registration failures with a one-time chat warning fallback.
+4) Audit/reset duplicate candidate file names (`Next-run-candidates.txt` vs `NEXT_RUN_CANDIDATES.txt`) to keep repo metadata tidy.
+5) Add a guarded refresh button for motion/scale bounds in case command metadata arrives after login on some clients.
+6) Tighten minimap drag clamping at very low/high UI scale factors to avoid edge clipping.
