@@ -1270,6 +1270,7 @@ local mainShowCombatTextCB
 local pendingFont
 local SyncPreviewToAppliedFont
 local UpdatePendingStateText
+local RefreshPreviewTextFromEditBox
 
 
 -- Favorites helpers ---------------------------------------------------------
@@ -1306,64 +1307,67 @@ local __fmPreviewToken = 0
 local function SelectFontKey(key)
     if type(key) ~= "string" or key == "" then return end
 
-    -- Parse "Group/File.ttf" (groups can contain slashes, so match the last slash)
-    local grp, fname = key:match("^(.*)/([^/]+)$")
-    if not grp or not fname then return end
-
-    local display = __fmStripFontExt(tostring(fname))
-
-    -- Clear other dropdown labels for clarity.
-    if type(UIDropDownMenu_SetText) == "function" then
-        for _, d2 in pairs(dropdowns) do
-            pcall(UIDropDownMenu_SetText, d2, "Select Font")
-        end
-    end
-
-    pendingFont = key
-    if UpdatePendingStateText then UpdatePendingStateText() end
-
     -- Prefer updating the dropdown that is currently open (if it's ours), otherwise the group dropdown.
-    local targetDD
     local open = _G and _G.UIDROPDOWNMENU_OPEN_MENU
+    local targetDD
     if open and open.__fmGroup and dropdowns[open.__fmGroup] == open then
         targetDD = open
-    else
-        targetDD = dropdowns[grp]
     end
 
-    if targetDD and type(UIDropDownMenu_SetText) == "function" then
-        if targetDD.__fmGroup == "Favorites" then
-            pcall(UIDropDownMenu_SetText, targetDD, display .. " (" .. grp .. ")")
+    local function ApplySelectionPreviewByKey(selectionKey, opts)
+        opts = opts or {}
+        local grp, fname = selectionKey:match("^(.*)/([^/]+)$")
+        if not grp or not fname then return false end
+
+        local display = __fmStripFontExt(tostring(fname))
+
+        if opts.clearAllDropDownLabels and type(UIDropDownMenu_SetText) == "function" then
+            for _, d2 in pairs(dropdowns) do
+                pcall(UIDropDownMenu_SetText, d2, "Select Font")
+            end
+        end
+
+        if opts.setPending then
+            pendingFont = selectionKey
+            if UpdatePendingStateText then UpdatePendingStateText() end
+        end
+
+        local dd = opts.targetDropDown or dropdowns[grp]
+        if dd and type(UIDropDownMenu_SetText) == "function" then
+            local label = opts.labelText or display
+            pcall(UIDropDownMenu_SetText, dd, label)
+        elseif dd and dd.SetText then
+            local label = opts.labelText or display
+            dd:SetText(label)
+        end
+
+        local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
+        if cache then
+            SetPreviewFont(cache)
+            if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, cache.path, false) end
         else
-            pcall(UIDropDownMenu_SetText, targetDD, display)
+            local path = ResolveFontPathFromKey(selectionKey)
+            if path then
+                SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), path)
+                if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, path, false) end
+            end
         end
-    elseif targetDD and targetDD.SetText then
-        if targetDD.__fmGroup == "Favorites" then
-            targetDD:SetText(display .. " (" .. grp .. ")")
-        else
-            targetDD:SetText(display)
+
+        if RefreshPreviewTextFromEditBox then
+            RefreshPreviewTextFromEditBox()
         end
+
+        return true
     end
 
-    -- Update preview font.
-    local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
-    if cache then
-        SetPreviewFont(cache)
-        if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, cache.path, false) end
-    else
-        local path = ResolveFontPathFromKey(key)
-        if path then
-            SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), path)
-            if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, path, false) end
-        end
-    end
-
-    -- Keep the preview text the same; only the font should change.
-    if editBox and preview and editBox.GetText and preview.SetText then
-        local txt = editBox:GetText() or ""
-        preview:SetText("")
-        preview:SetText(txt)
-    end
+    local grp, fname = key:match("^(.*)/([^/]+)$")
+    local display = fname and __fmStripFontExt(tostring(fname)) or nil
+    ApplySelectionPreviewByKey(key, {
+        setPending = true,
+        clearAllDropDownLabels = true,
+        targetDropDown = targetDD,
+        labelText = (targetDD and targetDD.__fmGroup == "Favorites" and display and grp) and (display .. " (" .. grp .. ")") or display,
+    })
 end
 
 -- Safely add buttons to UIDropDownMenu across Classic/Retail variants.
@@ -2522,16 +2526,7 @@ for idx, grp in ipairs(order) do
                 local cache = cachedFonts[item.grp][item.fname]
                 info.text = item.display .. " (" .. item.grp .. ")"
                 info.func = function()
-                    for g2, d2 in pairs(dropdowns) do UIDropDownMenu_SetText(d2, "Select Font") end
-                    -- store the selected font locally until the user clicks Apply
-                    pendingFont = item.key
-                    if UpdatePendingStateText then UpdatePendingStateText() end
-                    UIDropDownMenu_SetText(dd, item.display .. " (" .. item.grp .. ")")
-                    SetPreviewFont(cache)
-                    if UpdatePreviewHeaderText then UpdatePreviewHeaderText(item.display, cache.path, false) end
-                    local txt = editBox:GetText()
-                    preview:SetText("")
-                    preview:SetText(txt)
+                    SelectFontKey(item.key)
                 end
                 local selected = pendingFont or FontMagicDB.selectedFont
                 info.checked = (selected == item.key)
@@ -2559,16 +2554,7 @@ for idx, grp in ipairs(order) do
 
                     info.text = display
                     info.func = function()
-                        for g2, d2 in pairs(dropdowns) do UIDropDownMenu_SetText(d2, "Select Font") end
-                        -- store the selected font locally until the user clicks Apply
-                        pendingFont = key
-                        if UpdatePendingStateText then UpdatePendingStateText() end
-                        UIDropDownMenu_SetText(dd, display)
-                        SetPreviewFont(cache)
-                        if UpdatePreviewHeaderText then UpdatePreviewHeaderText(display, cache.path, false) end
-                        local txt = editBox:GetText()
-                        preview:SetText("")
-                        preview:SetText(txt)
+                        SelectFontKey(key)
                     end
                     local selected = pendingFont or FontMagicDB.selectedFont
                     info.checked = (selected == key)
@@ -2845,6 +2831,14 @@ editBox:SetPoint("TOP", previewBox, "BOTTOM", 0, -8)
 editBox:SetAutoFocus(false)
 editBox:SetText("12345")
 editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()) end)
+
+RefreshPreviewTextFromEditBox = function()
+    if editBox and preview and editBox.GetText and preview.SetText then
+        local txt = editBox:GetText() or ""
+        preview:SetText("")
+        preview:SetText(txt)
+    end
+end
 
 -- Discard un-applied font previews whenever the window closes.
 -- This ensures that reopening the addon always reflects the *currently applied*
@@ -4316,6 +4310,40 @@ pendingStateFS:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 34)
 pendingStateFS:SetPoint("RIGHT", applyBtn, "RIGHT", 0, 0)
 pendingStateFS:SetJustifyH("LEFT")
 
+local function SetApplyButtonPulse(enabled)
+    if not applyBtn then return end
+
+    if not applyBtn.__fmPulseAG and applyBtn.CreateAnimationGroup then
+        local ag = applyBtn:CreateAnimationGroup()
+        local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetOrder(1)
+        fadeOut:SetDuration(0.35)
+        fadeOut:SetFromAlpha(1)
+        fadeOut:SetToAlpha(0.55)
+
+        local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetOrder(2)
+        fadeIn:SetDuration(0.35)
+        fadeIn:SetFromAlpha(0.55)
+        fadeIn:SetToAlpha(1)
+        ag:SetLooping("REPEAT")
+
+        applyBtn.__fmPulseAG = ag
+    end
+
+    local ag = applyBtn.__fmPulseAG
+    if enabled then
+        if ag and not ag:IsPlaying() then
+            ag:Play()
+        end
+    else
+        if ag and ag:IsPlaying() then
+            ag:Stop()
+        end
+        applyBtn:SetAlpha(1)
+    end
+end
+
 UpdatePendingStateText = function()
     local selected = FontMagicDB and FontMagicDB.selectedFont
     local hasPending = type(pendingFont) == "string" and pendingFont ~= "" and pendingFont ~= selected
@@ -4324,6 +4352,7 @@ UpdatePendingStateText = function()
     else
         pendingStateFS:SetText("|cff8f8f8fApplied font is up to date|r")
     end
+    SetApplyButtonPulse(hasPending)
 end
 UpdatePendingStateText()
 
