@@ -1346,6 +1346,7 @@ local function AttachFavoriteStar(menuButton)
     star:SetScript("OnEnter", function(self)
         if not self.__fmKey then return end
         self.__fmHover = true
+        if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         local key = self.__fmKey
         GameTooltip:SetText((key and IsFavorite(key)) and "Remove from Favorites" or "Add to Favorites")
@@ -1356,7 +1357,9 @@ local function AttachFavoriteStar(menuButton)
     end)
     star:SetScript("OnLeave", function(self)
         self.__fmHover = false
-        GameTooltip:Hide()
+        if GameTooltip and GameTooltip.Hide then
+            GameTooltip:Hide()
+        end
         -- restore the non-hover alpha for the current state
         local key = self.__fmKey
         if self.icon then
@@ -1440,7 +1443,7 @@ UpdateFavoriteStar = function(menuButton, key)
 
     -- UIDropDownMenu recycles list buttons. If this row is a disabled placeholder
     -- (e.g. "No favorites yet"), hide any previously-attached star.
-    if not key then
+    if (not key) or (menuButton.IsEnabled and not menuButton:IsEnabled()) then
         star.__fmKey = nil
         if star.EnableMouse then star:EnableMouse(false) end
         if star.Hide then star:Hide() end
@@ -1481,6 +1484,26 @@ local function ClearDropDownListDecorations(level)
         if btn then
             __fmClearMenuButtonHoverPreview(btn)
             __fmClearMenuButtonFavoriteDecorations(btn)
+        end
+    end
+end
+
+local function ClearDropDownButtonsFrom(level, startIndex)
+    if type(level) ~= "number" then return end
+    local listFrame = _G and _G["DropDownList" .. tostring(level)]
+    local count = tonumber(listFrame and listFrame.numButtons) or 0
+    if count <= 0 then return end
+
+    local first = tonumber(startIndex) or 1
+    if first < 1 then first = 1 end
+
+    for i = first, count do
+        local btn = GetDropDownListButton(level, i)
+        if btn then
+            __fmClearMenuButtonHoverPreview(btn)
+            if btn.__fmStar then
+                UpdateFavoriteStar(btn, nil)
+            end
         end
     end
 end
@@ -2506,21 +2529,7 @@ for idx, grp in ipairs(order) do
 
             -- This entry is a disabled placeholder; ensure any recycled menu button
             -- doesn't show a leftover favorite star from a previous dropdown open.
-            local mb = GetDropDownListButton(level, buttonIndex + 1)
-            if mb then
-                __fmClearMenuButtonHoverPreview(mb)
-                if mb.__fmStar then
-                    UpdateFavoriteStar(mb, nil)
-                end
-            end
-
-            local mb2 = GetDropDownListButton(level, buttonIndex + 2)
-            if mb2 then
-                __fmClearMenuButtonHoverPreview(mb2)
-                if mb2.__fmStar then
-                    UpdateFavoriteStar(mb2, nil)
-                end
-            end
+            ClearDropDownButtonsFrom(level, buttonIndex + 1)
         end
     end)
 end
