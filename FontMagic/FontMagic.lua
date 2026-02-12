@@ -3744,10 +3744,50 @@ local RefreshCombatMetadataAndUI
 local combatMetadataStatusFS
 local combatMetadataRefreshBtn
 
+local function ReleaseCombatWidget(w)
+    if not w then return end
+
+    if w.GetScript and w.SetScript then
+        local scriptNames = {
+            "OnEnter", "OnLeave", "OnClick", "OnValueChanged", "OnMouseDown", "OnMouseUp",
+            "OnHide", "OnShow", "OnEvent", "OnTextChanged",
+        }
+        for _, scriptName in ipairs(scriptNames) do
+            if w:GetScript(scriptName) then
+                w:SetScript(scriptName, nil)
+            end
+        end
+    end
+
+    if w.__fmStar and w.__fmStar.SetScript then
+        w.__fmStar:SetScript("OnEnter", nil)
+        w.__fmStar:SetScript("OnLeave", nil)
+        w.__fmStar:SetScript("OnClick", nil)
+    end
+
+    if w.Hide then w:Hide() end
+    if w.SetParent then w:SetParent(nil) end
+end
+
 local function ClearCombatWidgets()
+    if GameTooltip and GameTooltip.GetOwner then
+        local owner = GameTooltip:GetOwner()
+        if owner then
+            for _, w in ipairs(combatWidgets) do
+                if owner == w or owner == (w and w.__fmStar) then
+                    HideTooltip()
+                    break
+                end
+            end
+        end
+    end
+
+    if type(CloseDropDownMenus) == "function" then
+        pcall(CloseDropDownMenus)
+    end
+
     for _, w in ipairs(combatWidgets) do
-        if w and w.Hide then w:Hide() end
-        if w and w.SetParent then w:SetParent(nil) end
+        ReleaseCombatWidget(w)
     end
     combatWidgets = {}
 end
@@ -3890,7 +3930,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
     table.insert(combatWidgets, valText)
 
-    local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
+    -- Keep this unnamed so rebuilding the combat panel never collides with
+    -- stale global frame names from a previous build.
+    local s = CreateFrame("Slider", nil, combatContent, "OptionsSliderTemplate")
     s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
     s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 30)
     s:SetMinMaxValues(minVal, maxVal)
@@ -4067,6 +4109,11 @@ CollectExtraBoolCombatTextCVars = function()
 end
 
 BuildCombatOptionsUI = function()
+    local previousScroll = 0
+    if combatScroll and combatScroll.GetVerticalScroll then
+        previousScroll = tonumber(combatScroll:GetVerticalScroll()) or 0
+    end
+
     ClearCombatWidgets()
 
     local y = 0
@@ -4349,6 +4396,13 @@ BuildCombatOptionsUI = function()
 
     local needed = -y + 20
     combatContent:SetHeight(math.max(needed, combatScroll:GetHeight()))
+
+    if combatScroll and combatScroll.SetVerticalScroll and combatScroll.GetVerticalScrollRange then
+        local maxScroll = tonumber(combatScroll:GetVerticalScrollRange()) or 0
+        if previousScroll < 0 then previousScroll = 0 end
+        if previousScroll > maxScroll then previousScroll = maxScroll end
+        combatScroll:SetVerticalScroll(previousScroll)
+    end
 end
 
 
