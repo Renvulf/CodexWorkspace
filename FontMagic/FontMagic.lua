@@ -4205,7 +4205,23 @@ local function AddSectionNote(y, textLine)
     return y - math.ceil(measured + 8)
 end
 
-local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
+local function CreateUnavailableBadge(anchor, hintText)
+    if not anchor then return nil end
+    local badge = combatContent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    badge:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+    badge:SetText("[Unavailable]")
+    badge:SetTextColor(1.0, 0.82, 0.28)
+    table.insert(combatWidgets, badge)
+
+    local tip = __fmTrim(hintText or "")
+    if tip ~= "" then
+        AttachTooltip(badge, "Unavailable on this client", tip)
+    end
+    return badge
+end
+
+local function CreateOptionCheckbox(col, y, label, checked, onClick, tip, enabled, disabledHint, showUnavailableBadge)
+    if enabled == nil then enabled = true end
     local x = (col == 0) and 0 or (CB_COL_W + CHECK_COL_GAP)
     local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
     cb:ClearAllPoints()
@@ -4223,12 +4239,23 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
         if fs.SetWordWrap then fs:SetWordWrap(true) end
     end
 
-    if tip then AttachTooltip(cb, label, tip) end
+    if enabled then
+        if tip then AttachTooltip(cb, label, tip) end
+    else
+        if cb.Disable then pcall(cb.Disable, cb) end
+        SetCheckButtonLabelColor(cb, 0.5, 0.5, 0.5)
+        if showUnavailableBadge and fs then
+            CreateUnavailableBadge(fs, disabledHint or BuildUnavailableControlHint(label))
+        end
+        if tip then
+            AttachTooltip(cb, label, tip .. "\n\n" .. (disabledHint or BuildUnavailableControlHint(label)))
+        end
+    end
     table.insert(combatWidgets, cb)
     return cb
 end
 
-local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint, hoverPreviewBuilder, layout)
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint, hoverPreviewBuilder, layout, showUnavailableBadge)
     if enabled == nil then enabled = true end
     local col = layout and layout.col
     local x = ((col == 1) and (CB_COL_W + CHECK_COL_GAP)) or 0
@@ -4243,6 +4270,9 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     title:SetWordWrap(true)
     if not enabled then
         title:SetTextColor(0.5, 0.5, 0.5)
+        if showUnavailableBadge then
+            CreateUnavailableBadge(title, disabledHint or BuildUnavailableControlHint(label))
+        end
     end
     table.insert(combatWidgets, title)
 
@@ -4310,7 +4340,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     return dd
 end
 
-local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply, layout)
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply, layout, showUnavailableBadge)
     if enabled == nil then enabled = true end
     if liveApply == nil then liveApply = true end
     local col = layout and layout.col
@@ -4328,6 +4358,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     fs:SetText(label)
     if not enabled then
         fs:SetTextColor(0.5, 0.5, 0.5)
+        if showUnavailableBadge then
+            CreateUnavailableBadge(fs, disabledHint or BuildUnavailableControlHint(label))
+        end
     end
     table.insert(combatWidgets, fs)
 
@@ -4608,6 +4641,7 @@ BuildCombatOptionsUI = function()
     }
     local styleControlY = y
     local styleColW = math.floor((CB_COL_W * 2 + CHECK_COL_GAP - 16) / 2)
+    local edgeStyleHint = BuildUnavailableControlHint("Edge style", "Enable 'Scrolling combat text feed' to change this setting")
     CreateOptionDropdown(y, "Edge style", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "", outlineChoices, function(val)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextOutlineMode = val
@@ -4616,7 +4650,7 @@ BuildCombatOptionsUI = function()
     end,
     "Adjusts border thickness for scrolling combat text characters.",
     FontMagicDB and FontMagicDB.applyToScrollingText,
-    "Enable 'Scrolling combat text feed' to change this setting.",
+    edgeStyleHint,
     function(infoData)
         local path = GetCurrentPreviewFontPath()
         local flags = ""
@@ -4628,18 +4662,24 @@ BuildCombatOptionsUI = function()
         end
         return "12345", path, flags
     end,
-    { col = 0, width = styleColW })
+    { col = 0, width = styleColW },
+    true)
 
+    local monoScrollingHint = BuildUnavailableControlHint("Monochrome rendering", "Enable 'Scrolling combat text feed' to change this setting")
     local monoCB = CreateOptionCheckbox(1, styleControlY, "Monochrome rendering", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextMonochrome = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
-    end, "Forces monochrome glyph rendering for scrolling combat text. Helpful for cleaner edges on some fonts.")
+    end, "Forces monochrome glyph rendering for scrolling combat text. Helpful for cleaner edges on some fonts.",
+    FontMagicDB and FontMagicDB.applyToScrollingText,
+    monoScrollingHint,
+    true)
     if not (FontMagicDB and FontMagicDB.applyToScrollingText) and monoCB and monoCB.Disable then
         pcall(monoCB.Disable, monoCB)
     end
 
+    local shadowHint = BuildUnavailableControlHint("Shadow distance", "Enable 'Scrolling combat text feed' to change this setting")
     CreateOptionSlider(styleControlY - 56, "Shadow", "Shadow distance", 0, 4, 1,
         tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 1,
         function(v)
@@ -4650,9 +4690,10 @@ BuildCombatOptionsUI = function()
         end,
         "Sets how far the shadow sits from the text. Use 0 to disable shadow rendering.",
         FontMagicDB and FontMagicDB.applyToScrollingText,
-        "Enable 'Scrolling combat text feed' to change this setting.",
+        shadowHint,
         true,
-        { col = 1, width = styleColW }
+        { col = 1, width = styleColW },
+        true
     )
 
     y = styleControlY - 124
@@ -4740,7 +4781,8 @@ BuildCombatOptionsUI = function()
         gravitySupported,
         BuildUnavailableControlHint("Motion gravity", "The gravity setting is not exposed by this client"),
         false,
-        { col = 0, width = motionColW }
+        { col = 0, width = motionColW },
+        true
     )
 
     CreateOptionSlider(motionControlY, "Fade", "Fade duration", fadeMin, fadeMax, FLOATING_MOTION_STEP,
@@ -4754,7 +4796,8 @@ BuildCombatOptionsUI = function()
         fadeSupported,
         BuildUnavailableControlHint("Fade duration", "The fade timing setting is not exposed by this client"),
         false,
-        { col = 1, width = motionColW }
+        { col = 1, width = motionColW },
+        true
     )
 
     y = motionControlY - 66
