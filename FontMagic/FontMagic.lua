@@ -1493,6 +1493,23 @@ local function GetSliderDisplayDecimals(step, minVal, maxVal)
     return d
 end
 
+local function NormalizeSliderRange(minVal, maxVal, fallbackMin, fallbackMax)
+    local lo = tonumber(minVal)
+    local hi = tonumber(maxVal)
+    local fLo = tonumber(fallbackMin)
+    local fHi = tonumber(fallbackMax)
+
+    if lo == nil then lo = fLo end
+    if hi == nil then hi = fHi end
+    if lo == nil then lo = 0 end
+    if hi == nil then hi = lo end
+    if hi < lo then
+        lo, hi = hi, lo
+    end
+
+    return lo, hi
+end
+
 -- Slider snapping helper used by both the main combat-text scale slider and
 -- floating-text motion sliders. This keeps endpoint behavior consistent across
 -- clients where floating-point drag updates can otherwise miss min/max labels.
@@ -1605,7 +1622,7 @@ local function ResolveNumericRange(name)
             local lo = tonumber((opts and (opts.minValue or opts.min)) or setting.minValue or setting.min)
             local hi = tonumber((opts and (opts.maxValue or opts.max)) or setting.maxValue or setting.max)
             if lo ~= nil and hi ~= nil and hi >= lo then
-                return lo, hi
+                return NormalizeSliderRange(lo, hi)
             end
         end
     end
@@ -1613,11 +1630,15 @@ local function ResolveNumericRange(name)
     -- Fall back to CVar metadata where available.
     local lo, hi = ResolveNumericRangeFromCVarInfo(name)
     if lo ~= nil and hi ~= nil then
-        return lo, hi
+        return NormalizeSliderRange(lo, hi)
     end
 
     -- Final fallback: console command metadata.
-    return ResolveNumericRangeFromConsole(name)
+    local cLo, cHi = ResolveNumericRangeFromConsole(name)
+    if cLo ~= nil and cHi ~= nil then
+        return NormalizeSliderRange(cLo, cHi)
+    end
+    return nil, nil
 end
 
 local function SetSliderObeyStepCompat(slider, obey)
@@ -3643,6 +3664,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         s:Enable()
         if tip then AttachTooltip(s, label, tip) end
     else
+        valText:SetText("|cff888888N/A|r")
+        if low then low:SetText("") end
+        if high then high:SetText("") end
         s:Disable()
         if tip then AttachTooltip(s, label, tip .. "\n\n" .. (disabledHint or "Not available on this client.")) end
     end
