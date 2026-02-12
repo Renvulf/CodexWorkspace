@@ -3170,6 +3170,18 @@ local function AddHeader(textLine, y)
     return y - 18
 end
 
+local function AddSectionNote(y, textLine)
+    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetJustifyV("TOP")
+    fs:SetTextColor(0.72, 0.72, 0.72)
+    fs:SetText(textLine)
+    table.insert(combatWidgets, fs)
+    return y - 24
+end
+
 local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     local x = (col == 0) and 0 or (CB_COL_W + CHECK_COL_GAP)
     local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
@@ -3434,42 +3446,44 @@ BuildCombatOptionsUI = function()
 
     y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
 
-    y = AddHeader("Font application targets", y)
+    y = AddHeader("Where FontMagic applies your combat font", y)
+    y = AddSectionNote(y, "Choose exactly which combat text systems should use the selected FontMagic font.")
     local applyWorld = FontMagicDB and FontMagicDB.applyToWorldText and true or false
     local applyScrolling = FontMagicDB and FontMagicDB.applyToScrollingText and true or false
 
-    CreateOptionCheckbox(0, y, "Apply to floating world numbers", applyWorld, function(self)
+    CreateOptionCheckbox(0, y, "World-space floating numbers", applyWorld, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.applyToWorldText = self:GetChecked() and true or false
         ApplySavedCombatFont()
         BuildCombatOptionsUI()
-    end, "When enabled, FontMagic updates floating combat numbers above characters and creatures in the game world.")
+    end, "Uses your selected FontMagic font for floating numbers shown above units in the 3D game world.")
 
-    CreateOptionCheckbox(1, y, "Apply to scrolling combat text", applyScrolling, function(self)
+    CreateOptionCheckbox(1, y, "Scrolling combat text feed", applyScrolling, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.applyToScrollingText = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
         BuildCombatOptionsUI()
-    end, "When enabled, FontMagic updates Blizzard's scrolling combat text near your character.")
+    end, "Uses your selected FontMagic font for Blizzard's scrolling combat text near your character.")
 
     y = y - CHECK_ROW_H - 10
 
-    y = AddHeader("Text rendering", y)
+    y = AddHeader("Text rendering style (scrolling combat text)", y)
+    y = AddSectionNote(y, "Fine-tune edge sharpness and shadow behavior for scrolling combat text only.")
     local outlineChoices = {
         { text = "None", value = "" },
-        { text = "Outline", value = "OUTLINE" },
-        { text = "Thick outline", value = "THICKOUTLINE" },
+        { text = "Standard outline", value = "OUTLINE" },
+        { text = "Heavy outline", value = "THICKOUTLINE" },
     }
-    CreateOptionDropdown(y, "Outline mode", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "", outlineChoices, function(val)
+    CreateOptionDropdown(y, "Edge style", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "", outlineChoices, function(val)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextOutlineMode = val
         ApplySavedCombatFont()
         RefreshPreviewRendering()
     end,
-    "Controls edge definition for scrolling combat text when this target is enabled.",
+    "Adjusts border thickness for scrolling combat text characters.",
     FontMagicDB and FontMagicDB.applyToScrollingText,
-    "Enable 'Apply to scrolling combat text' to change this setting.",
+    "Enable 'Scrolling combat text feed' to change this setting.",
     function(infoData)
         local path = GetCurrentPreviewFontPath()
         local flags = ""
@@ -3482,17 +3496,17 @@ BuildCombatOptionsUI = function()
         return "12345", path, flags
     end)
 
-    local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome antialiasing", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
+    local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome rendering", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextMonochrome = self:GetChecked() and true or false
         ApplySavedCombatFont()
         RefreshPreviewRendering()
-    end, "Enables MONOCHROME text rendering for scrolling combat text. This can improve sharpness with some fonts.")
+    end, "Forces monochrome glyph rendering for scrolling combat text. Helpful for cleaner edges on some fonts.")
     if not (FontMagicDB and FontMagicDB.applyToScrollingText) and monoCB and monoCB.Disable then
         pcall(monoCB.Disable, monoCB)
     end
 
-    CreateOptionSlider(y - 64, "Shadow", "Shadow offset", 0, 4, 1,
+    CreateOptionSlider(y - 64, "Shadow", "Shadow distance", 0, 4, 1,
         tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 1,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -3500,9 +3514,9 @@ BuildCombatOptionsUI = function()
             ApplySavedCombatFont()
             RefreshPreviewRendering()
         end,
-        "Adjusts text shadow distance. Set to 0 to disable shadows.",
+        "Sets how far the shadow sits from the text. Use 0 to disable shadow rendering.",
         FontMagicDB and FontMagicDB.applyToScrollingText,
-        "Enable 'Apply to scrolling combat text' to change this setting."
+        "Enable 'Scrolling combat text feed' to change this setting."
     )
 
     y = y - 130
@@ -3549,6 +3563,7 @@ BuildCombatOptionsUI = function()
     end
 
     y = AddHeader("Floating text motion", y)
+    y = AddSectionNote(y, "Tune movement behavior for world-space floating numbers. Changes apply immediately when supported.")
     local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
     local fadeName = ResolveCVarName({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
     local gravitySupported = (gravityName ~= nil)
@@ -3558,36 +3573,36 @@ BuildCombatOptionsUI = function()
         local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
         if not gravitySupported and not fadeSupported then
-            unavailable:SetText("Motion controls are not available on this client.")
+            unavailable:SetText("These motion controls are unavailable in this game client.")
         elseif not gravitySupported then
-            unavailable:SetText("Gravity control is not available on this client.")
+            unavailable:SetText("Gravity is unavailable in this game client.")
         else
-            unavailable:SetText("Fade duration control is not available on this client.")
+            unavailable:SetText("Fade timing is unavailable in this game client.")
         end
         unavailable:SetTextColor(0.7, 0.7, 0.7)
         table.insert(combatWidgets, unavailable)
         y = y - 20
     end
 
-    CreateOptionSlider(y, "Gravity", "Gravity strength", 0.00, 2.00, 0.05,
+    CreateOptionSlider(y, "Gravity", "Motion gravity", 0.00, 2.00, 0.05,
         tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
             FontMagicDB.floatingTextGravity = v
             ApplyFloatingTextMotionSettings()
         end,
-        "Controls arc intensity while floating world numbers rise and settle.",
+        "Controls arc intensity while world-space numbers move upward and settle.",
         gravitySupported
     )
 
-    CreateOptionSlider(y - 54, "Fade", "Visible duration", 0.10, 3.00, 0.05,
+    CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
         tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
             FontMagicDB.floatingTextFadeDuration = v
             ApplyFloatingTextMotionSettings()
         end,
-        "Controls how long floating world numbers stay visible before fading out.",
+        "Controls how long world-space numbers remain visible before fading.",
         fadeSupported
     )
 
