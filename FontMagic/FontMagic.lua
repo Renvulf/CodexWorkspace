@@ -376,6 +376,46 @@ local function ResolveConsoleSetting(cvarOrCandidates)
     return nil, nil
 end
 
+local function ResolveConsoleSettingTargets(cvarOrCandidates)
+    -- Returns a de-duplicated list of settings that can be written for a feature.
+    -- This helps across client builds that expose both legacy and v2 names.
+    local out, seen = {}, {}
+
+    local function addResolved(name, commandType)
+        if type(name) ~= "string" or name == "" then return end
+        local key = name .. "#" .. tostring(commandType or "nil")
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = { name = name, commandType = commandType }
+    end
+
+    local function addFrom(candidate)
+        local n, ct = ResolveConsoleSetting(candidate)
+        if n then
+            addResolved(n, ct)
+        end
+    end
+
+    if type(cvarOrCandidates) == "string" then
+        addFrom(cvarOrCandidates)
+        local base = cvarOrCandidates:gsub("_[vV]%d+$", "")
+        if base ~= cvarOrCandidates then
+            addFrom(base)
+        else
+            addFrom(base .. "_v2")
+            addFrom(base .. "_V2")
+            addFrom(base .. "_v3")
+            addFrom(base .. "_V3")
+        end
+    elseif type(cvarOrCandidates) == "table" then
+        for _, candidate in ipairs(cvarOrCandidates) do
+            addFrom(candidate)
+        end
+    end
+
+    return out
+end
+
 local SetCVarString -- forward declaration (used before definition)
 local function ApplyConsoleSetting(name, commandType, value)
     if not name then return end
@@ -901,18 +941,24 @@ local function ApplyFloatingTextMotionSettings()
         return v
     end
 
-    local gravityName, gravityCt = ResolveConsoleSetting({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
-    local fadeName, fadeCt = ResolveConsoleSetting({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+    local gravityTargets = ResolveConsoleSettingTargets({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+    local fadeTargets = ResolveConsoleSettingTargets({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
 
-    if gravityName and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
+    if #gravityTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
         local g = clamp(FontMagicDB.floatingTextGravity, 0.00, 2.00)
         FontMagicDB.floatingTextGravity = g
-        ApplyConsoleSetting(gravityName, gravityCt, string.format("%.2f", g))
+        local formatted = string.format("%.2f", g)
+        for _, target in ipairs(gravityTargets) do
+            ApplyConsoleSetting(target.name, target.commandType, formatted)
+        end
     end
-    if fadeName and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
+    if #fadeTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
         local f = clamp(FontMagicDB.floatingTextFadeDuration, 0.10, 3.00)
         FontMagicDB.floatingTextFadeDuration = f
-        ApplyConsoleSetting(fadeName, fadeCt, string.format("%.2f", f))
+        local formatted = string.format("%.2f", f)
+        for _, target in ipairs(fadeTargets) do
+            ApplyConsoleSetting(target.name, target.commandType, formatted)
+        end
     end
 end
 
