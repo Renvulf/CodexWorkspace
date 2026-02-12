@@ -1200,6 +1200,7 @@ local dropdowns = {}
 local mainShowCombatTextCB
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
+local SyncPreviewToAppliedFont
 
 
 -- Favorites helpers ---------------------------------------------------------
@@ -1370,6 +1371,7 @@ local function AttachFavoriteStar(menuButton)
             -- Removed from Favorites while inside Favorites: clear the Favorites
             -- dropdown label only if it was showing this key.
             local shouldClear = (pendingFont == key) or (FontMagicDB and FontMagicDB.selectedFont == key)
+            local removedPending = (pendingFont == key)
 
             if pendingFont == key then
                 pendingFont = nil
@@ -1381,6 +1383,10 @@ local function AttachFavoriteStar(menuButton)
                 elseif dropdowns["Favorites"].SetText then
                     dropdowns["Favorites"]:SetText("Select Font")
                 end
+            end
+
+            if removedPending and type(SyncPreviewToAppliedFont) == "function" then
+                pcall(SyncPreviewToAppliedFont)
             end
         end
 
@@ -1459,6 +1465,34 @@ local function GetStepDecimals(step)
     return decimals
 end
 
+local function GetNumberDecimals(n)
+    if type(n) ~= "number" then
+        n = tonumber(n)
+    end
+    if n == nil then return 0 end
+
+    local str = tostring(n)
+    if str:find("e") or str:find("E") then
+        str = string.format("%.6f", n)
+    end
+    local frac = str:match("%f[%d]%.(%d+)")
+    if not frac then return 0 end
+
+    local decimals = #frac
+    if decimals > 6 then decimals = 6 end
+    return decimals
+end
+
+local function GetSliderDisplayDecimals(step, minVal, maxVal)
+    local d = GetStepDecimals(step)
+    local dMin = GetNumberDecimals(minVal)
+    local dMax = GetNumberDecimals(maxVal)
+    if dMin > d then d = dMin end
+    if dMax > d then d = dMax end
+    if d > 6 then d = 6 end
+    return d
+end
+
 -- Slider snapping helper used by both the main combat-text scale slider and
 -- floating-text motion sliders. This keeps endpoint behavior consistent across
 -- clients where floating-point drag updates can otherwise miss min/max labels.
@@ -1491,7 +1525,7 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
     local snapped = math.floor(((v - minVal) / step) + 0.5) * step + minVal
     snapped = math.max(minVal, math.min(maxVal, snapped))
 
-    local precision = GetStepDecimals(step)
+    local precision = GetSliderDisplayDecimals(step, minVal, maxVal)
     local mult = 10 ^ precision
     snapped = math.floor(snapped * mult + 0.5) / mult
     return snapped
@@ -2540,7 +2574,7 @@ end
 RefreshScaleControl()
 
 -- 6) PREVIEW & EDIT ---------------------------------------------------------
-PREVIEW_BOX_H = 84
+local PREVIEW_BOX_H = 84
 
 -- Fixed-size preview "textbox" so the preview area stays consistent between fonts.
 local previewBox = CreateFrame("Frame", addonName .. "PreviewBox", frame, backdropTemplate)
@@ -2598,7 +2632,7 @@ editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()
 -- combat text font (saved in FontMagicDB, or Blizzard default when none is saved),
 -- and prevents a rare race where a queued next-frame sizing pass from a preview
 -- can overwrite the correct font after reopening.
-local function SyncPreviewToAppliedFont()
+SyncPreviewToAppliedFont = function()
     if not (preview and editBox) then return end
 
     local key = FontMagicDB and FontMagicDB.selectedFont
@@ -2645,10 +2679,10 @@ end)
 -- 7) COMBAT TEXT OPTIONS (EXPANDABLE PANEL) --------------------------------
 
 -- Right-side expandable panel
-isExpanded = false
-RIGHT_PANEL_W = PREVIEW_W + 52
-PANEL_GAP = 16
-incomingInit = false
+local isExpanded = false
+local RIGHT_PANEL_W = PREVIEW_W + 52
+local PANEL_GAP = 16
+local incomingInit = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
@@ -3540,7 +3574,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     SetSliderObeyStepCompat(s, false)
     local low = _G[s:GetName() .. "Low"]
     local high = _G[s:GetName() .. "High"]
-    local decimals = GetStepDecimals(step)
+    local decimals = GetSliderDisplayDecimals(step, minVal, maxVal)
     local endpointFmt = "%0." .. tostring(decimals) .. "f"
     if low then
         low:SetText(string.format(endpointFmt, minVal))
