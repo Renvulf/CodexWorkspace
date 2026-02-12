@@ -1650,6 +1650,42 @@ local BuildCombatOptionsUI
 local RefreshCombatMetadataAndUI
 local combatMetadataStatusFS
 local combatMetadataRefreshBtn
+local combatMetadataRefreshCooldownUntil = 0
+local combatMetadataRefreshPending = false
+local COMBAT_METADATA_REFRESH_COOLDOWN = 1.5
+
+local function SetCombatMetadataStatus(message, r, g, b)
+    if not (combatMetadataStatusFS and combatMetadataStatusFS.SetText) then
+        return
+    end
+
+    combatMetadataStatusFS:SetText(message or "")
+
+    if combatMetadataStatusFS.SetTextColor then
+        local cr = (type(r) == "number") and r or 0.83
+        local cg = (type(g) == "number") and g or 0.83
+        local cb = (type(b) == "number") and b or 0.83
+        combatMetadataStatusFS:SetTextColor(cr, cg, cb)
+    end
+end
+
+local function SetCombatMetadataRefreshButtonEnabled(enabled)
+    if not combatMetadataRefreshBtn then
+        return
+    end
+
+    if enabled then
+        if combatMetadataRefreshBtn.Enable then
+            pcall(combatMetadataRefreshBtn.Enable, combatMetadataRefreshBtn)
+        end
+        combatMetadataRefreshBtn:SetAlpha(1)
+    else
+        if combatMetadataRefreshBtn.Disable then
+            pcall(combatMetadataRefreshBtn.Disable, combatMetadataRefreshBtn)
+        end
+        combatMetadataRefreshBtn:SetAlpha(0.6)
+    end
+end
 
 
 -- Favorites helpers ---------------------------------------------------------
@@ -3437,15 +3473,23 @@ combatMetadataRefreshBtn:SetSize(130, 20)
 combatMetadataRefreshBtn:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -10, -6)
 combatMetadataRefreshBtn:SetText("Refresh setting data")
 combatMetadataRefreshBtn:SetScript("OnClick", function()
-    if RefreshCombatMetadataAndUI then RefreshCombatMetadataAndUI() end
+    if RefreshCombatMetadataAndUI then
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now < (combatMetadataRefreshCooldownUntil or 0) then
+            combatMetadataRefreshPending = true
+            SetCombatMetadataStatus("Refresh queued; please wait a moment.", 1.0, 0.82, 0.26)
+            return
+        end
+        RefreshCombatMetadataAndUI()
+    end
 end)
-AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed.")
+AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed. Rapid clicks are safely throttled.")
 
 combatMetadataStatusFS = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 combatMetadataStatusFS:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -24)
 combatMetadataStatusFS:SetPoint("RIGHT", combatMetadataRefreshBtn, "LEFT", -8, 0)
 combatMetadataStatusFS:SetJustifyH("LEFT")
-combatMetadataStatusFS:SetText("If any slider range looks incorrect, click Refresh setting data once.")
+SetCombatMetadataStatus("If any slider range looks incorrect, click Refresh setting data once.")
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
 combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -50)
@@ -4904,11 +4948,38 @@ local function RefreshCombatTextCVars(force)
 end
 
 RefreshCombatMetadataAndUI = function()
-    RefreshConsoleCommandIndex()
-    RefreshCombatTextCVars(true)
+    combatMetadataRefreshPending = false
+    combatMetadataRefreshCooldownUntil = ((type(GetTime) == "function" and GetTime()) or 0) + COMBAT_METADATA_REFRESH_COOLDOWN
+    SetCombatMetadataRefreshButtonEnabled(false)
 
-    if combatMetadataStatusFS and combatMetadataStatusFS.SetText then
-        combatMetadataStatusFS:SetText("Metadata refreshed for this session.")
+    local refreshOk = true
+    local indexOk = pcall(RefreshConsoleCommandIndex)
+    local uiOk = pcall(RefreshCombatTextCVars, true)
+    if not indexOk or not uiOk then
+        refreshOk = false
+    end
+
+    if refreshOk then
+        SetCombatMetadataStatus("Metadata refreshed for this session.", 0.4, 1.0, 0.4)
+    else
+        SetCombatMetadataStatus("Refresh failed for one or more settings APIs on this client.", 1.0, 0.3, 0.3)
+    end
+
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        C_Timer.After(COMBAT_METADATA_REFRESH_COOLDOWN, function()
+            SetCombatMetadataRefreshButtonEnabled(true)
+
+            if combatMetadataRefreshPending and combatPanel and combatPanel.IsShown and combatPanel:IsShown() and RefreshCombatMetadataAndUI then
+                RefreshCombatMetadataAndUI()
+                return
+            end
+
+            if not combatMetadataRefreshPending then
+                SetCombatMetadataStatus("If any slider range looks incorrect, click Refresh setting data once.")
+            end
+        end)
+    else
+        SetCombatMetadataRefreshButtonEnabled(true)
     end
 end
 
