@@ -2456,7 +2456,7 @@ end)
 
 -- Right-side expandable panel
 isExpanded = false
-RIGHT_PANEL_W = PREVIEW_W + 26
+RIGHT_PANEL_W = PREVIEW_W + 52
 PANEL_GAP = 16
 incomingInit = false
 
@@ -2530,11 +2530,11 @@ combatTitle:SetText("Combat Text Options")
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
 combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -30)
-combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -26, 10)
+combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -30, 10)
 
 local combatContent = CreateFrame("Frame", nil, combatScroll)
 combatContent:SetPoint("TOPLEFT", 0, 0)
-combatContent:SetSize(PREVIEW_W, 1)
+combatContent:SetSize(PREVIEW_W + 18, 1)
 combatScroll:SetScrollChild(combatContent)
 
 combatScroll:EnableMouseWheel(true)
@@ -3241,7 +3241,7 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
         if fs.SetFontObject and type(GameFontHighlightSmall) ~= "nil" then
             pcall(fs.SetFontObject, fs, GameFontHighlightSmall)
         end
-        if fs.SetWidth then fs:SetWidth(CB_COL_W - 26) end
+        if fs.SetWidth then fs:SetWidth(CB_COL_W - 34) end
         if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
         if fs.SetWordWrap then fs:SetWordWrap(true) end
     end
@@ -3342,7 +3342,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
 
     local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
     s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
-    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 18)
+    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 30)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
     -- Keep drag movement smooth on clients where obey-step dragging can feel
@@ -3358,7 +3358,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     if high then
         high:SetText(string.format("%.2f", maxVal))
         high:ClearAllPoints()
-        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -2)
+        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", -8, -2)
     end
     local t = s.Text or _G[s:GetName() .. "Text"]
     if t and t.Hide then t:Hide() end
