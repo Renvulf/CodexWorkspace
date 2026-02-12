@@ -934,6 +934,10 @@ local function ApplyCombatTextFontPath(path)
     ApplyScrollingTextFontPath(path)
 end
 
+local FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX = 0.00, 2.00
+local FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX = 0.10, 3.00
+local FLOATING_MOTION_STEP = 0.05
+
 local function ApplyFloatingTextMotionSettings()
     local function clamp(v, lo, hi)
         if v < lo then return lo end
@@ -945,7 +949,7 @@ local function ApplyFloatingTextMotionSettings()
     local fadeTargets = ResolveConsoleSettingTargets({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
 
     if #gravityTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
-        local g = clamp(FontMagicDB.floatingTextGravity, 0.00, 2.00)
+        local g = clamp(FontMagicDB.floatingTextGravity, FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX)
         FontMagicDB.floatingTextGravity = g
         local formatted = string.format("%.2f", g)
         for _, target in ipairs(gravityTargets) do
@@ -953,7 +957,7 @@ local function ApplyFloatingTextMotionSettings()
         end
     end
     if #fadeTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
-        local f = clamp(FontMagicDB.floatingTextFadeDuration, 0.10, 3.00)
+        local f = clamp(FontMagicDB.floatingTextFadeDuration, FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX)
         FontMagicDB.floatingTextFadeDuration = f
         local formatted = string.format("%.2f", f)
         for _, target in ipairs(fadeTargets) do
@@ -1441,7 +1445,11 @@ end
 
 local function GetStepDecimals(step)
     local decimals = 0
-    local str = tostring(step or "")
+    local n = tonumber(step)
+    local str = tostring((n ~= nil) and n or "")
+    if str:find("e") or str:find("E") then
+        str = string.format("%.6f", n or 0)
+    end
     local frac = str:match("%f[%d]%.(%d+)")
     if frac then
         decimals = #frac
@@ -1470,7 +1478,9 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
         v = tonumber(v) or minVal
     end
 
-    local epsilon = math.max(step * 0.15, 0.000001)
+    -- Endpoint snapping uses half-step tolerance so users can always reach
+    -- exact min/max even when drag updates jitter around the ends.
+    local epsilon = math.max(step * 0.5, 0.000001)
     if math.abs(v - minVal) <= epsilon then
         return minVal
     end
@@ -1485,6 +1495,37 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
     local mult = 10 ^ precision
     snapped = math.floor(snapped * mult + 0.5) / mult
     return snapped
+end
+
+local function ResolveNumericRangeFromConsole(name)
+    if type(name) ~= "string" or name == "" then return nil, nil end
+
+    local getAll = nil
+    if type(C_Console) == "table" and type(C_Console.GetAllCommands) == "function" then
+        getAll = C_Console.GetAllCommands
+    elseif type(ConsoleGetAllCommands) == "function" then
+        getAll = ConsoleGetAllCommands
+    end
+    if not getAll then return nil, nil end
+
+    local ok, list = pcall(getAll)
+    if not ok or type(list) ~= "table" then return nil, nil end
+
+    for _, info in ipairs(list) do
+        if type(info) == "table" then
+            local commandName = info.command or info.name
+            if commandName == name then
+                local lo = tonumber(info.minValue)
+                local hi = tonumber(info.maxValue)
+                if lo ~= nil and hi ~= nil and hi >= lo then
+                    return lo, hi
+                end
+                break
+            end
+        end
+    end
+
+    return nil, nil
 end
 
 --[[
@@ -2349,6 +2390,9 @@ local function GetCombatTextScaleCVar()
 end
 
 
+local SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX, SCALE_STEP = 0.5, 5.0, 0.1
+local scaleMin, scaleMax = SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX
+
 local scaleCVar, scaleCVarCommandType, scaleCVarValue = GetCombatTextScaleCVar()
 local scaleSupported = scaleCVar ~= nil
 
@@ -2367,7 +2411,7 @@ slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -10)
 
 local function UpdateScale(val)
     if not scaleSupported then return end
-    val = SnapSliderToStep(val, 0.5, 5.0, 0.1)
+    val = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
     ApplyConsoleSetting(scaleCVar, scaleCVarCommandType, tostring(val))
     scaleValue:SetText(string.format("%.1f", val))
 end
@@ -2377,27 +2421,31 @@ local function RefreshScaleControl()
     scaleSupported = scaleCVar ~= nil
 
     if scaleSupported then
-        slider:SetMinMaxValues(0.5, 5.0)
-        slider:SetValueStep(0.1)
+        local discoveredMin, discoveredMax = ResolveNumericRangeFromConsole(scaleCVar)
+        scaleMin = discoveredMin or SCALE_FALLBACK_MIN
+        scaleMax = discoveredMax or SCALE_FALLBACK_MAX
+
+        slider:SetMinMaxValues(scaleMin, scaleMax)
+        slider:SetValueStep(SCALE_STEP)
         slider:SetObeyStepOnDrag(false)
         local low = _G[slider:GetName() .. "Low"]
         local high = _G[slider:GetName() .. "High"]
-        if low then low:SetText("0.5") end
-        if high then high:SetText("5.0") end
+        if low then low:SetText(string.format("%.1f", scaleMin)) end
+        if high then high:SetText(string.format("%.1f", scaleMax)) end
         slider:Enable()
         scaleLabel:SetTextColor(1, 1, 1)
         local currentScale = tonumber(scaleCVarValue)
             or tonumber(GetCVarString(scaleCVar)) or 1.0
-        local snappedScale = SnapSliderToStep(currentScale, 0.5, 5.0, 0.1)
+        local snappedScale = SnapSliderToStep(currentScale, scaleMin, scaleMax, SCALE_STEP)
         slider:SetValue(snappedScale)
         scaleValue:SetText(string.format("%.1f", snappedScale))
         slider:SetScript("OnValueChanged", function(self, val)
-            local snapped = SnapSliderToStep(val, 0.5, 5.0, 0.1)
+            local snapped = SnapSliderToStep(val, scaleMin, scaleMax, SCALE_STEP)
             scaleValue:SetText(string.format("%.1f", snapped))
             UpdateScale(snapped)
         end)
         slider:SetScript("OnMouseUp", function(self)
-            local snapped = SnapSliderToStep(self:GetValue(), 0.5, 5.0, 0.1)
+            local snapped = SnapSliderToStep(self:GetValue(), scaleMin, scaleMax, SCALE_STEP)
             self:SetValue(snapped)
             UpdateScale(snapped)
         end)
@@ -3728,6 +3776,21 @@ BuildCombatOptionsUI = function()
     local gravitySupported = (gravityName ~= nil)
     local fadeSupported = (fadeName ~= nil)
 
+    local gravityMin, gravityMax = FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX
+    local fadeMin, fadeMax = FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX
+    if gravitySupported then
+        local lo, hi = ResolveNumericRangeFromConsole(gravityName)
+        if lo ~= nil and hi ~= nil then
+            gravityMin, gravityMax = lo, hi
+        end
+    end
+    if fadeSupported then
+        local lo, hi = ResolveNumericRangeFromConsole(fadeName)
+        if lo ~= nil and hi ~= nil then
+            fadeMin, fadeMax = lo, hi
+        end
+    end
+
     if not gravitySupported or not fadeSupported then
         local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
@@ -3743,7 +3806,7 @@ BuildCombatOptionsUI = function()
         y = y - 20
     end
 
-    CreateOptionSlider(y, "Gravity", "Motion gravity", 0.00, 2.00, 0.05,
+    CreateOptionSlider(y, "Gravity", "Motion gravity", gravityMin, gravityMax, FLOATING_MOTION_STEP,
         tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -3756,7 +3819,7 @@ BuildCombatOptionsUI = function()
         false
     )
 
-    CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
+    CreateOptionSlider(y - 54, "Fade", "Fade duration", fadeMin, fadeMax, FLOATING_MOTION_STEP,
         tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
