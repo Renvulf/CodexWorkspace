@@ -1389,6 +1389,7 @@ local function AttachFavoriteStar(menuButton)
             -- dropdown label only if it was showing this key.
             local shouldClear = (pendingFont == key) or (FontMagicDB and FontMagicDB.selectedFont == key)
             local removedPending = (pendingFont == key)
+            local selectedWasRemoved = (FontMagicDB and FontMagicDB.selectedFont == key)
 
             if pendingFont == key then
                 pendingFont = nil
@@ -1402,7 +1403,7 @@ local function AttachFavoriteStar(menuButton)
                 end
             end
 
-            if removedPending and type(SyncPreviewToAppliedFont) == "function" then
+            if (removedPending or selectedWasRemoved) and type(SyncPreviewToAppliedFont) == "function" then
                 pcall(SyncPreviewToAppliedFont)
             end
         end
@@ -1524,6 +1525,14 @@ local function NormalizeSliderRange(minVal, maxVal, fallbackMin, fallbackMax)
         lo, hi = hi, lo
     end
 
+    return lo, hi
+end
+
+local function NormalizeSliderBounds(minVal, maxVal, fallbackMin, fallbackMax)
+    local lo, hi = NormalizeSliderRange(minVal, maxVal, fallbackMin, fallbackMax)
+    if lo == hi then
+        hi = lo + 0.000001
+    end
     return lo, hi
 end
 
@@ -2559,8 +2568,7 @@ local function RefreshScaleControl()
 
     if scaleSupported then
         local discoveredMin, discoveredMax = ResolveNumericRange(scaleCVar)
-        scaleMin = discoveredMin or SCALE_FALLBACK_MIN
-        scaleMax = discoveredMax or SCALE_FALLBACK_MAX
+        scaleMin, scaleMax = NormalizeSliderBounds(discoveredMin, discoveredMax, SCALE_FALLBACK_MIN, SCALE_FALLBACK_MAX)
         scaleDecimals = GetSliderDisplayDecimals(SCALE_STEP, scaleMin, scaleMax)
 
         slider:SetMinMaxValues(scaleMin, scaleMax)
@@ -2597,6 +2605,7 @@ local function RefreshScaleControl()
         slider:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine("Drag to adjust combat text size", 1, 1, 1)
+            GameTooltip:AddLine(string.format("Range: %0." .. tostring(scaleDecimals) .. "f to %0." .. tostring(scaleDecimals) .. "f", scaleMin, scaleMax), 0.9, 0.9, 0.9)
             GameTooltip:Show()
         end)
     else
@@ -3599,6 +3608,8 @@ end
 local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply)
     if enabled == nil then enabled = true end
     if liveApply == nil then liveApply = true end
+    minVal, maxVal = NormalizeSliderBounds(minVal, maxVal, 0, 1)
+
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
     fs:SetText(label)
@@ -3637,6 +3648,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     if t and t.Hide then t:Hide() end
 
     local fmt = "%0." .. tostring(decimals) .. "f"
+    local rangeHint = string.format("\n\nRange: " .. endpointFmt .. " to " .. endpointFmt, minVal, maxVal)
 
     local function setVal(v)
         local snapped = SnapSliderToStep(v, minVal, maxVal, step)
@@ -3679,13 +3691,13 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
 
     if enabled then
         s:Enable()
-        if tip then AttachTooltip(s, label, tip) end
+        if tip then AttachTooltip(s, label, tip .. rangeHint) end
     else
         valText:SetText("|cff888888N/A|r")
         if low then low:SetText("") end
         if high then high:SetText("") end
         s:Disable()
-        if tip then AttachTooltip(s, label, tip .. "\n\n" .. (disabledHint or "Not available on this client.")) end
+        if tip then AttachTooltip(s, label, tip .. rangeHint .. "\n\n" .. (disabledHint or "Not available on this client.")) end
     end
 
     table.insert(combatWidgets, s)
