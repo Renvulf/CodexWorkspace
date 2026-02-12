@@ -1,5 +1,5 @@
-1) Compact-mode preset for low UI scale users while preserving current default layout.
-2) Keyboard navigation between main dropdown groups (Tab/Shift-Tab/arrow) with zero-taint handling.
-3) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
-4) Add lightweight API-availability badges to combat controls for faster troubleshooting.
-5) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
+1) Keyboard navigation between main dropdown groups (Tab/Shift-Tab/arrow) with zero-taint handling.
+2) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
+3) Add lightweight API-availability badges to combat controls for faster troubleshooting.
+4) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
+5) Add an in-panel one-click /reload helper after layout preset changes.

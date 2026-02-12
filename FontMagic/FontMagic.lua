@@ -577,6 +577,8 @@ local FM_MINIMAP_RADIUS_OFFSET_DEFAULT = 10
 local FM_MINIMAP_RADIUS_OFFSET_MIN = -4
 local FM_MINIMAP_RADIUS_OFFSET_MAX = 28
 local FM_MINIMAP_DRAG_START_THRESHOLD_PX = 8
+local FM_LAYOUT_PRESET_DEFAULT = "default"
+local FM_LAYOUT_PRESET_COMPACT = "compact"
 
 local function ClampNumber(v, minV, maxV)
     if type(v) ~= "number" then return minV end
@@ -623,6 +625,10 @@ if type(FontMagicDB.schemaVersion) ~= "number" then
 elseif FontMagicDB.schemaVersion < FM_DB_SCHEMA_VERSION then
     -- Reserved migration hook for future schema upgrades.
     FontMagicDB.schemaVersion = FM_DB_SCHEMA_VERSION
+end
+
+if type(FontMagicDB.layoutPreset) ~= "string" or FontMagicDB.layoutPreset == "" then
+    FontMagicDB.layoutPreset = FM_LAYOUT_PRESET_DEFAULT
 end
 
 local function EnsureTableField(tbl, key)
@@ -1241,7 +1247,8 @@ ApplySavedCombatFont()
 
 
 -- 2) MAIN WINDOW
-local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTemplate)
+local frame
+frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTemplate)
 --
 -- The options window previously lacked a border and used uneven padding
 -- around its contents.  Here we keep all the widgets exactly where they
@@ -1250,30 +1257,66 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 --
 -- Constants control the visual spacing and border width so adjustments can
 -- be made in a single location.
-local PAD       = 20   -- distance from the outer edge to the nearest widget
-local BORDER    = 12   -- thickness of the decorative border
-local HEADER_H  = 40   -- space reserved for the InterfaceOptions header
-local PREVIEW_W = 320  -- width of preview and edit boxes
--- Checkbox column width. Adjusted to ensure the combined width of the two
--- columns plus the spacing between them equals the preview width. The
--- preview box is 320px wide and we want 16px of spacing between the two
--- columns, leaving 304px for the columns themselves. 304/2 = 152.
-local CB_COL_W  = 152  -- checkbox column width
-local DD_COL_W  = 200  -- width allocated for each dropdown column
+local layoutPreset = (FontMagicDB and FontMagicDB.layoutPreset == FM_LAYOUT_PRESET_COMPACT) and FM_LAYOUT_PRESET_COMPACT or FM_LAYOUT_PRESET_DEFAULT
 
--- Dropdown layout (shared by the window and menu builders)
-local DD_COLS      = 2    -- number of dropdowns per row
-local DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
-local DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
+local PAD, BORDER, HEADER_H, PREVIEW_W, CB_COL_W, DD_COL_W, DD_COLS, DD_MARGIN_X, DD_WIDTH
+local CONTENT_NUDGE_Y, CHECK_BASE_Y, CHECK_ROW_H, CHECK_COL_GAP
 
--- UI spacing tweaks
--- These values are intentionally centralized so we can keep the layout
--- balanced while ensuring the lowest checkbox row never collides with the
--- bottom action buttons.
-local CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
-local CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
-local CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
-local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
+local function ApplyLayoutPreset(preset)
+    local useCompact = (preset == FM_LAYOUT_PRESET_COMPACT)
+
+    PAD      = useCompact and 16 or 20
+    BORDER   = 12
+    HEADER_H = useCompact and 34 or 40
+    PREVIEW_W = useCompact and 300 or 320
+
+    -- Keep checkbox columns aligned to preview width and a consistent column gap.
+    CHECK_COL_GAP = useCompact and 12 or 16
+    CB_COL_W = math.floor((PREVIEW_W - CHECK_COL_GAP) / 2)
+
+    -- Dropdown grid density: compact mode keeps two columns, but tightens gutters and control width.
+    DD_COLS = 2
+    DD_MARGIN_X = useCompact and 10 or 12
+    DD_WIDTH = useCompact and 148 or 160
+    DD_COL_W = useCompact and 186 or 200
+
+    -- Shared vertical rhythm.
+    CONTENT_NUDGE_Y = useCompact and 4 or 12
+    CHECK_BASE_Y = useCompact and -8 or -12
+    CHECK_ROW_H = useCompact and 28 or 30
+
+    layoutPreset = useCompact and FM_LAYOUT_PRESET_COMPACT or FM_LAYOUT_PRESET_DEFAULT
+end
+
+ApplyLayoutPreset(layoutPreset)
+
+local RefreshWindowMetrics
+local function SetLayoutPresetChoice(preset, quiet)
+    local normalized = (preset == FM_LAYOUT_PRESET_COMPACT) and FM_LAYOUT_PRESET_COMPACT or FM_LAYOUT_PRESET_DEFAULT
+    if FontMagicDB then
+        FontMagicDB.layoutPreset = normalized
+    end
+
+    if normalized == layoutPreset then
+        if not quiet then
+            print("|cFF00FF00[FontMagic]|r Layout preset is already " .. normalized .. ".")
+        end
+        return false
+    end
+
+    ApplyLayoutPreset(normalized)
+    if RefreshWindowMetrics then
+        RefreshWindowMetrics()
+    end
+    if frame and frame.SetSize then
+        frame:SetSize(frame.__fmCollapsedW or frame:GetWidth(), 500 + PAD * 2)
+    end
+
+    if not quiet then
+        print("|cFF00FF00[FontMagic]|r Layout preset set to " .. normalized .. ". Type /reload to apply it now.")
+    end
+    return true
+end
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -1283,11 +1326,15 @@ local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
 -- dropdowns from touching or overlapping the right border when the
 -- window is scaled.
 -- Compute the window width from the dropdown grid so the columns are
--- perfectly padded on both sides when using 3 dropdowns per row.
-local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
-local COLLAPSED_W = INNER_W + PAD * 2
-local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
-frame.__fmCollapsedW = COLLAPSED_W
+-- perfectly padded on both sides.
+local INNER_W, COLLAPSED_W, LEFT_PANEL_X
+RefreshWindowMetrics = function()
+    INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
+    COLLAPSED_W = INNER_W + PAD * 2
+    LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
+    frame.__fmCollapsedW = COLLAPSED_W
+end
+RefreshWindowMetrics()
 frame:SetSize(COLLAPSED_W, 500 + PAD * 2)
 frame:SetPoint("CENTER")
 frame:SetBackdrop({
@@ -4860,6 +4907,29 @@ defaultBtn:SetText("Reset")
 
 AttachTooltip(defaultBtn, "Reset", "Restore Blizzard defaults. Choose what to reset.")
 
+local layoutBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+layoutBtn:SetSize(132, 22)
+layoutBtn:SetPoint("LEFT", defaultBtn, "RIGHT", 8, 0)
+
+local function UpdateLayoutButtonText()
+    if not layoutBtn or not layoutBtn.SetText then return end
+    local txt = (layoutPreset == FM_LAYOUT_PRESET_COMPACT) and "Layout: Compact" or "Layout: Default"
+    layoutBtn:SetText(txt)
+end
+
+UpdateLayoutButtonText()
+AttachTooltip(layoutBtn, "Window layout preset",
+    "Choose between the default layout and a compact layout optimized for lower UI scales.\n\n" ..
+    "This setting is safe and persistent, and takes effect after /reload.")
+layoutBtn:SetScript("OnClick", function()
+    local nextPreset = (layoutPreset == FM_LAYOUT_PRESET_COMPACT) and FM_LAYOUT_PRESET_DEFAULT or FM_LAYOUT_PRESET_COMPACT
+    local changed = SetLayoutPresetChoice(nextPreset)
+    UpdateLayoutButtonText()
+    if changed and UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage("FontMagic: /reload to apply layout preset.", 1, 0.82, 0)
+    end
+end)
+
 -- Reset dialog (font-only / combat-options-only / everything)
 local resetDialog = CreateFrame("Frame", addonName .. "ResetDialog", UIParent, backdropTemplate)
 resetDialog:SetFrameStrata("DIALOG")
@@ -5291,10 +5361,18 @@ SlashCmdList["FCT"] = function(msg)
         return
     elseif msg == "status" or msg == "debug" then
         PrintCombatSettingsDebugReport()
+        print("|cFF00FF00[FontMagic]|r Layout preset: " .. tostring((FontMagicDB and FontMagicDB.layoutPreset) or FM_LAYOUT_PRESET_DEFAULT))
+        return
+    elseif msg == "compact" then
+        SetLayoutPresetChoice(FM_LAYOUT_PRESET_COMPACT)
+        return
+    elseif msg == "default" then
+        SetLayoutPresetChoice(FM_LAYOUT_PRESET_DEFAULT)
         return
     elseif msg == "help" then
-        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">")
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
         print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
+        print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then /reload.")
         return
     end
 
