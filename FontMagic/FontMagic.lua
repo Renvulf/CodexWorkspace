@@ -938,6 +938,17 @@ local FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX = 0.00, 2.00
 local FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX = 0.10, 3.00
 local FLOATING_MOTION_STEP = 0.05
 
+local function ResolveMotionClampRange(candidates, fallbackMin, fallbackMax)
+    local name = ResolveCVarName(candidates)
+    if name then
+        local lo, hi = ResolveNumericRange(name)
+        if lo ~= nil and hi ~= nil then
+            return lo, hi
+        end
+    end
+    return fallbackMin, fallbackMax
+end
+
 local function ApplyFloatingTextMotionSettings()
     local function clamp(v, lo, hi)
         if v < lo then return lo end
@@ -945,11 +956,17 @@ local function ApplyFloatingTextMotionSettings()
         return v
     end
 
-    local gravityTargets = ResolveConsoleSettingTargets({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
-    local fadeTargets = ResolveConsoleSettingTargets({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+    local gravityCandidates = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
+    local fadeCandidates = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+
+    local gravityTargets = ResolveConsoleSettingTargets(gravityCandidates)
+    local fadeTargets = ResolveConsoleSettingTargets(fadeCandidates)
+
+    local gravityMin, gravityMax = ResolveMotionClampRange(gravityCandidates, FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX)
+    local fadeMin, fadeMax = ResolveMotionClampRange(fadeCandidates, FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX)
 
     if #gravityTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
-        local g = clamp(FontMagicDB.floatingTextGravity, FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX)
+        local g = clamp(FontMagicDB.floatingTextGravity, gravityMin, gravityMax)
         FontMagicDB.floatingTextGravity = g
         local formatted = string.format("%.2f", g)
         for _, target in ipairs(gravityTargets) do
@@ -957,7 +974,7 @@ local function ApplyFloatingTextMotionSettings()
         end
     end
     if #fadeTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
-        local f = clamp(FontMagicDB.floatingTextFadeDuration, FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX)
+        local f = clamp(FontMagicDB.floatingTextFadeDuration, fadeMin, fadeMax)
         FontMagicDB.floatingTextFadeDuration = f
         local formatted = string.format("%.2f", f)
         for _, target in ipairs(fadeTargets) do
@@ -1045,30 +1062,30 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 --
 -- Constants control the visual spacing and border width so adjustments can
 -- be made in a single location.
-PAD       = 20   -- distance from the outer edge to the nearest widget
-BORDER    = 12   -- thickness of the decorative border
-HEADER_H  = 40   -- space reserved for the InterfaceOptions header
-PREVIEW_W = 320  -- width of preview and edit boxes
+local PAD       = 20   -- distance from the outer edge to the nearest widget
+local BORDER    = 12   -- thickness of the decorative border
+local HEADER_H  = 40   -- space reserved for the InterfaceOptions header
+local PREVIEW_W = 320  -- width of preview and edit boxes
 -- Checkbox column width. Adjusted to ensure the combined width of the two
 -- columns plus the spacing between them equals the preview width. The
 -- preview box is 320px wide and we want 16px of spacing between the two
 -- columns, leaving 304px for the columns themselves. 304/2 = 152.
-CB_COL_W  = 152  -- checkbox column width
-DD_COL_W  = 200  -- width allocated for each dropdown column
+local CB_COL_W  = 152  -- checkbox column width
+local DD_COL_W  = 200  -- width allocated for each dropdown column
 
 -- Dropdown layout (shared by the window and menu builders)
-DD_COLS      = 2    -- number of dropdowns per row
-DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
-DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
+local DD_COLS      = 2    -- number of dropdowns per row
+local DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
+local DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
 
 -- UI spacing tweaks
 -- These values are intentionally centralized so we can keep the layout
 -- balanced while ensuring the lowest checkbox row never collides with the
 -- bottom action buttons.
-CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
-CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
-CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
-CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
+local CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
+local CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
+local CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
+local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -1079,9 +1096,9 @@ CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
 -- window is scaled.
 -- Compute the window width from the dropdown grid so the columns are
 -- perfectly padded on both sides when using 3 dropdowns per row.
-INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
-COLLAPSED_W = INNER_W + PAD * 2
-LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
+local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
+local COLLAPSED_W = INNER_W + PAD * 2
+local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
 frame.__fmCollapsedW = COLLAPSED_W
 frame:SetSize(COLLAPSED_W, 500 + PAD * 2)
 frame:SetPoint("CENTER")
@@ -2594,7 +2611,7 @@ local function RefreshScaleControl()
         slider:SetScript("OnMouseUp", nil)
         slider:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Not available in this version of WoW", nil, nil, nil, nil, true)
+            GameTooltip:SetText("Combat text size is unavailable in this game client.", nil, nil, nil, nil, true)
             GameTooltip:Show()
         end)
     end
