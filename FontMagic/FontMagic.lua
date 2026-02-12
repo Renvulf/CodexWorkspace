@@ -552,14 +552,36 @@ end
 --]]
 
 -- SavedDB defaults
-local FM_DB_SCHEMA_VERSION = 1
+local FM_DB_SCHEMA_VERSION = 2
+
+local FM_MINIMAP_RADIUS_OFFSET_DEFAULT = 10
+local FM_MINIMAP_RADIUS_OFFSET_MIN = -4
+local FM_MINIMAP_RADIUS_OFFSET_MAX = 28
+
+local function ClampNumber(v, minV, maxV)
+    if type(v) ~= "number" then return minV end
+    if v < minV then return minV end
+    if v > maxV then return maxV end
+    return v
+end
+
+local function NormalizeAngleDegrees(v)
+    local n = tonumber(v) or 0
+    n = n % 360
+    if n < 0 then n = n + 360 end
+    return n
+end
 
 if type(FontMagicDB) ~= "table" then
     -- Default placement for the minimap button is the bottom-left corner
     -- (approximately 225 degrees around the minimap).  This avoids the
     -- initial position being hidden beneath default UI elements on a fresh
     -- installation, particularly in WoW Classic.
-    FontMagicDB = { minimapAngle = 225, minimapHide = false }
+    FontMagicDB = {
+        minimapAngle = 225,
+        minimapHide = false,
+        minimapRadiusOffset = FM_MINIMAP_RADIUS_OFFSET_DEFAULT,
+    }
 elseif FontMagicDB.minimapAngle == nil then
     -- In case a previous version created the DB without this key, ensure a
     -- sensible default.
@@ -568,6 +590,12 @@ elseif FontMagicDB.minimapAngle == nil then
 elseif FontMagicDB.minimapHide == nil then
     -- Ensure the hide flag exists for old DB versions
     FontMagicDB.minimapHide = false
+end
+
+if type(FontMagicDB.minimapRadiusOffset) ~= "number" then
+    FontMagicDB.minimapRadiusOffset = FM_MINIMAP_RADIUS_OFFSET_DEFAULT
+else
+    FontMagicDB.minimapRadiusOffset = ClampNumber(FontMagicDB.minimapRadiusOffset, FM_MINIMAP_RADIUS_OFFSET_MIN, FM_MINIMAP_RADIUS_OFFSET_MAX)
 end
 
 if type(FontMagicDB.schemaVersion) ~= "number" then
@@ -4556,6 +4584,7 @@ local function ResetFontOnly()
     -- Preserve minimap settings
     local keepAngle = FontMagicDB and FontMagicDB.minimapAngle
     local keepHide  = FontMagicDB and FontMagicDB.minimapHide
+    local keepRadius = FontMagicDB and FontMagicDB.minimapRadiusOffset
 
     FontMagicDB = FontMagicDB or {}
     FontMagicDB.selectedFont = nil
@@ -4563,6 +4592,7 @@ local function ResetFontOnly()
     FontMagicDB.selectedGroup = nil
     FontMagicDB.minimapAngle = keepAngle
     FontMagicDB.minimapHide  = keepHide
+    FontMagicDB.minimapRadiusOffset = keepRadius
     FontMagicDB.applyToWorldText = true
     FontMagicDB.applyToScrollingText = true
     FontMagicDB.scrollingTextOutlineMode = ""
@@ -4902,6 +4932,19 @@ SlashCmdList["FCT"] = function(msg)
     -- normalise message for case-insensitive matching and remove whitespace
     msg = tostring(msg or ""):match("^%s*(.-)%s*$"):lower()
 
+    local radiusValue = msg:match("^radius%s+([%+%-]?%d+)$")
+    if radiusValue then
+        local n = tonumber(radiusValue)
+        if n then
+            FontMagicDB.minimapRadiusOffset = ClampNumber(n, FM_MINIMAP_RADIUS_OFFSET_MIN, FM_MINIMAP_RADIUS_OFFSET_MAX)
+            if minimapButton then
+                PositionMinimapButton(minimapButton, FontMagicDB.minimapAngle)
+            end
+            print(string.format("|cFF00FF00[FontMagic]|r Minimap icon radius offset set to %d.", FontMagicDB.minimapRadiusOffset))
+            return
+        end
+    end
+
     if msg == "hide" then
         if minimapButton then minimapButton:Hide() end
         FontMagicDB.minimapHide = true
@@ -4918,7 +4961,7 @@ SlashCmdList["FCT"] = function(msg)
         PrintCombatSettingsDebugReport()
         return
     elseif msg == "help" then
-        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status")
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">")
         return
     end
 
@@ -5000,10 +5043,44 @@ end
 
 -- helper to position the minimap button at a specific angle
 local function PositionMinimapButton(btn, angle)
-    local a = math.rad(angle or 0)
-    local r = (Minimap and Minimap.GetWidth and (Minimap:GetWidth() / 2) or 70) + 10
+    if not (btn and Minimap and Minimap.GetWidth and Minimap.GetHeight and btn.GetWidth and btn.GetHeight) then return end
+
+    local shape = "ROUND"
+    if type(GetMinimapShape) == "function" then
+        local ok, s = pcall(GetMinimapShape)
+        if ok and type(s) == "string" and s ~= "" then
+            shape = s
+        end
+    end
+
+    local a = math.rad(NormalizeAngleDegrees(angle or 0))
+    local offset = ClampNumber(tonumber(FontMagicDB and FontMagicDB.minimapRadiusOffset) or FM_MINIMAP_RADIUS_OFFSET_DEFAULT, FM_MINIMAP_RADIUS_OFFSET_MIN, FM_MINIMAP_RADIUS_OFFSET_MAX)
+    local hw = (Minimap:GetWidth() or 140) * 0.5
+    local hh = (Minimap:GetHeight() or 140) * 0.5
+
+    local bx = (btn:GetWidth() or 20) * 0.5
+    local by = (btn:GetHeight() or 20) * 0.5
+    local xr, yr
+
+    -- If a square-ish minimap skin is active, keep the button on the frame bounds
+    -- instead of forcing a circle so it doesn't collide with nearby UI elements.
+    if shape == "SQUARE" or shape == "CORNER-TOPLEFT" or shape == "CORNER-TOPRIGHT" or shape == "CORNER-BOTTOMLEFT" or shape == "CORNER-BOTTOMRIGHT" or shape == "SIDE-LEFT" or shape == "SIDE-RIGHT" or shape == "SIDE-TOP" or shape == "SIDE-BOTTOM" or shape == "TRICORNER-TOPLEFT" or shape == "TRICORNER-TOPRIGHT" or shape == "TRICORNER-BOTTOMLEFT" or shape == "TRICORNER-BOTTOMRIGHT" then
+        xr = hw + offset - bx
+        yr = hh + offset - by
+    else
+        local base = math.min(hw, hh)
+        xr = base + offset - bx
+        yr = base + offset - by
+    end
+
+    xr = math.max(8, xr)
+    yr = math.max(8, yr)
+
+    local x = math.cos(a) * xr
+    local y = math.sin(a) * yr
+
     btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * r, math.sin(a) * r)
+    btn:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
 -- Cross-version atan2 (some clients expose math.atan2, others rely on math.atan(y,x))
@@ -5031,13 +5108,21 @@ local function SafeAtan2(y, x)
 end
 
 local function UpdateMinimapButtonDrag(self)
+    local now = GetTime and GetTime() or 0
+    local last = self.__fmLastDragUpdate or 0
+    if now > 0 and (now - last) < 0.016 then
+        return
+    end
+    self.__fmLastDragUpdate = now
+
     local mx, my = GetCursorPosition()
     local scale = (Minimap and Minimap.GetEffectiveScale and Minimap:GetEffectiveScale()) or 1
     mx, my = mx / scale, my / scale
     local cx, cy = Minimap:GetCenter()
+    if not (cx and cy) then return end
     local dx, dy = mx - cx, my - cy
 
-    local ang = math.deg(SafeAtan2(dy, dx))
+    local ang = NormalizeAngleDegrees(math.deg(SafeAtan2(dy, dx)))
     FontMagicDB.minimapAngle = ang
     PositionMinimapButton(self, ang)
 end
@@ -5084,6 +5169,7 @@ local function CreateMinimapButton()
 
     minimapButton:SetScript("OnDragStart", function(self)
         self.isMoving = true
+        self.__fmLastDragUpdate = 0
         self:SetScript("OnUpdate", UpdateMinimapButtonDrag)
     end)
     minimapButton:SetScript("OnDragStop", function(self)

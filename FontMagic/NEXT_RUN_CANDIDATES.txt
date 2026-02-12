@@ -1,5 +1,5 @@
-1) Validate minimap icon behavior on ultra-wide + square minimap add-ons and add a bounded radius option if overlap is observed.
-2) Add keyboard focus traversal polish for the combat options panel (tab order + clear focus ring behavior).
-3) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth on 1080p.
-4) Add a lightweight diagnostics export command for resolved combat setting targets (copy-friendly chat output).
-5) Consider a compact mode preset for low UI scale users without changing current defaults.
+1) Add keyboard focus traversal polish for the combat options panel (tab order + clear focus ring behavior).
+2) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth on 1080p.
+3) Add a lightweight diagnostics export command for resolved combat setting targets (copy-friendly chat output).
+4) Consider a compact mode preset for low UI scale users without changing current defaults.
+5) Validate minimap icon drag UX with very small minimap scales and clamp hit-region if accidental drags are reported.
