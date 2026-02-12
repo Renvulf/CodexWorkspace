@@ -2955,6 +2955,35 @@ editBox:SetPoint("TOP", previewBox, "BOTTOM", 0, -8)
 editBox:SetAutoFocus(false)
 editBox:SetText("12345")
 editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()) end)
+editBox:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+    -- Keep ESC behavior predictable: after leaving the edit box, pressing ESC
+    -- closes the FontMagic window via UISpecialFrames as expected.
+    if RefreshPreviewTextFromEditBox then
+        RefreshPreviewTextFromEditBox()
+    end
+end)
+editBox:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+    if RefreshPreviewTextFromEditBox then
+        RefreshPreviewTextFromEditBox()
+    end
+end)
+editBox:SetScript("OnTabPressed", function(self)
+    -- InputBoxTemplate can insert tab characters on some clients. Treat Tab as
+    -- keyboard navigation instead so users never get stuck with literal tabs.
+    self:ClearFocus()
+end)
+editBox:SetScript("OnEditFocusGained", function()
+    if previewBox and previewBox.SetBackdropBorderColor then
+        previewBox:SetBackdropBorderColor(1, 0.82, 0.22, 1)
+    end
+end)
+editBox:SetScript("OnEditFocusLost", function()
+    if previewBox and previewBox.SetBackdropBorderColor then
+        previewBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    end
+end)
 
 RefreshPreviewTextFromEditBox = function()
     if editBox and preview and editBox.GetText and preview.SetText then
@@ -3012,6 +3041,26 @@ frame:SetScript("OnHide", function()
 
     -- Put the preview back to the actually applied font so reopening is consistent.
     pcall(SyncPreviewToAppliedFont)
+end)
+
+frame:EnableKeyboard(true)
+frame:SetScript("OnKeyDown", function(self, key)
+    if key ~= "ESCAPE" then return end
+
+    -- If the reset dialog is open, close it first and keep the main window open.
+    if self.__fmResetDialog and self.__fmResetDialog.IsShown and self.__fmResetDialog:IsShown() then
+        self.__fmResetDialog:Hide()
+        return
+    end
+
+    -- If focus is in the preview edit box, clear focus first so the next ESC
+    -- follows standard window-close behavior.
+    if editBox and editBox.HasFocus and editBox:HasFocus() then
+        editBox:ClearFocus()
+        return
+    end
+
+    self:Hide()
 end)
 -- 7) COMBAT TEXT OPTIONS (EXPANDABLE PANEL) --------------------------------
 
