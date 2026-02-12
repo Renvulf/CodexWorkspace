@@ -1528,6 +1528,70 @@ local function ResolveNumericRangeFromConsole(name)
     return nil, nil
 end
 
+local function ResolveNumericRangeFromCVarInfo(name)
+    if type(name) ~= "string" or name == "" then return nil, nil end
+
+    local getInfo = nil
+    if type(C_CVar) == "table" and type(C_CVar.GetCVarInfo) == "function" then
+        getInfo = C_CVar.GetCVarInfo
+    elseif type(GetCVarInfo) == "function" then
+        getInfo = GetCVarInfo
+    end
+    if not getInfo then return nil, nil end
+
+    local ok, info = pcall(getInfo, name)
+    if not ok or type(info) ~= "table" then
+        return nil, nil
+    end
+
+    local lo = tonumber(info.minValue or info.min)
+    local hi = tonumber(info.maxValue or info.max)
+    if lo ~= nil and hi ~= nil and hi >= lo then
+        return lo, hi
+    end
+
+    return nil, nil
+end
+
+local function ResolveNumericRange(name)
+    if type(name) ~= "string" or name == "" then return nil, nil end
+
+    -- Prefer Settings metadata first when available (Retail Settings panel).
+    if type(Settings) == "table" and type(Settings.GetSetting) == "function" then
+        local ok, setting = pcall(Settings.GetSetting, name)
+        if ok and type(setting) == "table" then
+            local opts = nil
+            if type(setting.GetOptions) == "function" then
+                local okOpts, data = pcall(setting.GetOptions, setting)
+                if okOpts and type(data) == "table" then
+                    opts = data
+                end
+            end
+
+            local lo = tonumber((opts and (opts.minValue or opts.min)) or setting.minValue or setting.min)
+            local hi = tonumber((opts and (opts.maxValue or opts.max)) or setting.maxValue or setting.max)
+            if lo ~= nil and hi ~= nil and hi >= lo then
+                return lo, hi
+            end
+        end
+    end
+
+    -- Fall back to CVar metadata where available.
+    local lo, hi = ResolveNumericRangeFromCVarInfo(name)
+    if lo ~= nil and hi ~= nil then
+        return lo, hi
+    end
+
+    -- Final fallback: console command metadata.
+    return ResolveNumericRangeFromConsole(name)
+end
+
+local function SetSliderObeyStepCompat(slider, obey)
+    if slider and type(slider.SetObeyStepOnDrag) == "function" then
+        pcall(slider.SetObeyStepOnDrag, slider, obey and true or false)
+    end
+end
+
 --[[
     Apply a font to the preview field.
 
@@ -2236,7 +2300,7 @@ for idx, grp in ipairs(order) do
                     for g2, d2 in pairs(dropdowns) do UIDropDownMenu_SetText(d2, "Select Font") end
                     -- store the selected font locally until the user clicks Apply
                     pendingFont = item.key
-                    UIDropDownMenu_SetText(dd, item.display)
+                    UIDropDownMenu_SetText(dd, item.display .. " (" .. item.grp .. ")")
                     SetPreviewFont(cache)
                     if UpdatePreviewHeaderText then UpdatePreviewHeaderText(item.display, cache.path, false) end
                     local txt = editBox:GetText()
@@ -2421,13 +2485,13 @@ local function RefreshScaleControl()
     scaleSupported = scaleCVar ~= nil
 
     if scaleSupported then
-        local discoveredMin, discoveredMax = ResolveNumericRangeFromConsole(scaleCVar)
+        local discoveredMin, discoveredMax = ResolveNumericRange(scaleCVar)
         scaleMin = discoveredMin or SCALE_FALLBACK_MIN
         scaleMax = discoveredMax or SCALE_FALLBACK_MAX
 
         slider:SetMinMaxValues(scaleMin, scaleMax)
         slider:SetValueStep(SCALE_STEP)
-        slider:SetObeyStepOnDrag(false)
+        SetSliderObeyStepCompat(slider, false)
         local low = _G[slider:GetName() .. "Low"]
         local high = _G[slider:GetName() .. "High"]
         if low then low:SetText(string.format("%.1f", scaleMin)) end
@@ -3473,7 +3537,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetValueStep(step)
     -- Keep drag movement smooth on clients where obey-step dragging can feel
     -- clicky for decimal steps (for example 0.05). We still snap in code.
-    s:SetObeyStepOnDrag(false)
+    SetSliderObeyStepCompat(s, false)
     local low = _G[s:GetName() .. "Low"]
     local high = _G[s:GetName() .. "High"]
     local decimals = GetStepDecimals(step)
@@ -3496,6 +3560,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     local function setVal(v)
         local snapped = SnapSliderToStep(v, minVal, maxVal, step)
         valText:SetText(string.format(fmt, snapped))
+        if value == nil then
+            value = snapped
+        end
         return snapped
     end
 
@@ -3524,8 +3591,10 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         onChange(rounded)
     end)
 
-    s:SetValue(value)
-    setVal(value)
+    local initial = setVal(value)
+    settingValue = true
+    s:SetValue(initial)
+    settingValue = false
 
     if enabled then
         s:Enable()
@@ -3779,13 +3848,13 @@ BuildCombatOptionsUI = function()
     local gravityMin, gravityMax = FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX
     local fadeMin, fadeMax = FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX
     if gravitySupported then
-        local lo, hi = ResolveNumericRangeFromConsole(gravityName)
+        local lo, hi = ResolveNumericRange(gravityName)
         if lo ~= nil and hi ~= nil then
             gravityMin, gravityMax = lo, hi
         end
     end
     if fadeSupported then
-        local lo, hi = ResolveNumericRangeFromConsole(fadeName)
+        local lo, hi = ResolveNumericRange(fadeName)
         if lo ~= nil and hi ~= nil then
             fadeMin, fadeMax = lo, hi
         end
