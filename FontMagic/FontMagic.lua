@@ -1423,6 +1423,18 @@ end)
 frame:Hide()
 frame.name = "FontMagic"
 
+local function AddUniqueUISpecialFrame(name)
+    if type(UISpecialFrames) ~= "table" or type(name) ~= "string" or name == "" then
+        return
+    end
+    for _, v in ipairs(UISpecialFrames) do
+        if v == name then
+            return
+        end
+    end
+    table.insert(UISpecialFrames, name)
+end
+
 -- Anchor frame used to keep the left-side controls (Apply/Reset/Close/Expand) fixed
 -- when the window expands to show the optional Combat Options panel.
 local leftAnchor = CreateFrame("Frame", nil, frame)
@@ -1432,9 +1444,7 @@ leftAnchor:SetWidth(frame.__fmCollapsedW or frame:GetWidth() or 0)
 frame.__fmLeftAnchor = leftAnchor
 
 -- allow ESC key to close the frame
-if UISpecialFrames then
-    tinsert(UISpecialFrames, frame:GetName())
-end
+AddUniqueUISpecialFrame(frame:GetName())
 
 -- Register the options panel only once (prevents duplicate categories in Retail Settings).
 local _optionsRegistered = false
@@ -5236,16 +5246,7 @@ frame.__fmResetDialog = resetDialog
 
 -- Allow closing the dialog with Escape and keep it on-screen
 if resetDialog and resetDialog.GetName and type(UISpecialFrames) == "table" then
-    local n = resetDialog:GetName()
-    if n then
-        local exists = false
-        for _, v in ipairs(UISpecialFrames) do
-            if v == n then exists = true break end
-        end
-        if not exists then
-            table.insert(UISpecialFrames, n)
-        end
-    end
+    AddUniqueUISpecialFrame(resetDialog:GetName())
 end
 if resetDialog and resetDialog.SetClampedToScreen then
     resetDialog:SetClampedToScreen(true)
@@ -5278,11 +5279,9 @@ local function ResetFontOnly()
     FontMagicDB.minimapAngle = keepAngle
     FontMagicDB.minimapHide  = keepHide
     FontMagicDB.minimapRadiusOffset = keepRadius
-    FontMagicDB.applyToWorldText = true
-    FontMagicDB.applyToScrollingText = true
-    FontMagicDB.scrollingTextOutlineMode = ""
-    FontMagicDB.scrollingTextMonochrome = false
-    FontMagicDB.scrollingTextShadowOffset = 1
+
+    -- Keep combat option choices intact for a true "font only" reset.
+    -- Users can still reset combat options separately via "Reset Combat Options".
 
     FontMagicPCDB = FontMagicPCDB or {}
     FontMagicPCDB.selectedGroup = nil
