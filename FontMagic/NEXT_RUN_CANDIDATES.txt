@@ -1,5 +1,4 @@
-1) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth at 1080p.
-2) Consider a compact mode preset for low UI scale users without changing current defaults.
-3) Add optional keyboard navigation between dropdown groups in the main panel (arrow/Tab shortcuts) if it can be done without taint risk.
-4) Audit combat-panel control tooltips for API-unavailable states and standardize disabled-state help text wording.
-5) Add a tiny inline hint near minimap radius command text in /float help output to improve discoverability.
+1) Consider a compact mode preset for low UI scale users without changing current defaults.
+2) Add optional keyboard navigation between dropdown groups in the main panel (arrow/Tab shortcuts) if it can be done without taint risk.
+3) Audit combat-panel control tooltips for API-unavailable states and standardize disabled-state help text wording.
+4) Add a tiny inline hint near minimap radius command text in /float help output to improve discoverability.

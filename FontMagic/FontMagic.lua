@@ -3969,7 +3969,15 @@ local function AddSectionNote(y, textLine)
     fs:SetTextColor(0.72, 0.72, 0.72)
     fs:SetText(textLine)
     table.insert(combatWidgets, fs)
-    return y - 24
+
+    -- Notes can wrap differently based on client font metrics and UI scale.
+    -- Use measured height so following rows never collide with wrapped text.
+    local measured = 0
+    if fs.GetStringHeight then
+        measured = tonumber(fs:GetStringHeight()) or 0
+    end
+    if measured < 16 then measured = 16 end
+    return y - math.ceil(measured + 8)
 end
 
 local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
@@ -3995,12 +4003,19 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     return cb
 end
 
-local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint, hoverPreviewBuilder)
+local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, tip, enabled, disabledHint, hoverPreviewBuilder, layout)
     if enabled == nil then enabled = true end
+    local col = layout and layout.col
+    local x = ((col == 1) and (CB_COL_W + CHECK_COL_GAP)) or 0
+    local dropWidth = (layout and tonumber(layout.width)) or (CB_COL_W * 2 + CHECK_COL_GAP - 48)
+    dropWidth = math.max(88, dropWidth)
 
     local title = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    title:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    title:SetPoint("TOPLEFT", combatContent, "TOPLEFT", x, y)
     title:SetText(label)
+    title:SetWidth(math.max(70, dropWidth + 16))
+    title:SetJustifyH("LEFT")
+    title:SetWordWrap(true)
     if not enabled then
         title:SetTextColor(0.5, 0.5, 0.5)
     end
@@ -4008,7 +4023,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
 
     local dd = CreateFrame("Frame", nil, combatContent, "UIDropDownMenuTemplate")
     dd:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -14, -4)
-    SetDropdownWidthCompat(dd, CB_COL_W * 2 + CHECK_COL_GAP - 48)
+    SetDropdownWidthCompat(dd, dropWidth)
     InitDropdownCompat(dd, function(self, level)
         level = level or 1
         if level ~= 1 then return end
@@ -4070,14 +4085,21 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     return dd
 end
 
-local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply)
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply, layout)
     if enabled == nil then enabled = true end
     if liveApply == nil then liveApply = true end
+    local col = layout and layout.col
+    local baseX = ((col == 1) and (CB_COL_W + CHECK_COL_GAP)) or 0
+    local sliderWidth = (layout and tonumber(layout.width)) or (CB_COL_W * 2 + CHECK_COL_GAP - 30)
+    sliderWidth = math.max(96, sliderWidth)
     minVal, maxVal = NormalizeSliderBounds(minVal, maxVal, 0, 1)
     step = NormalizeSliderStep(step, minVal, maxVal)
 
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", baseX, y)
+    fs:SetWidth(sliderWidth)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
     fs:SetText(label)
     if not enabled then
         fs:SetTextColor(0.5, 0.5, 0.5)
@@ -4085,14 +4107,14 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     table.insert(combatWidgets, fs)
 
     local valText = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
+    valText:SetPoint("TOPRIGHT", fs, "TOPRIGHT", 0, 0)
     table.insert(combatWidgets, valText)
 
     -- Keep this unnamed so rebuilding the combat panel never collides with
     -- stale global frame names from a previous build.
     local s = CreateFrame("Slider", nil, combatContent, "OptionsSliderTemplate")
     s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
-    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 30)
+    s:SetWidth(sliderWidth - 12)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
     -- Keep drag movement smooth on clients where obey-step dragging can feel
@@ -4359,6 +4381,8 @@ BuildCombatOptionsUI = function()
         { text = "Standard outline", value = "OUTLINE" },
         { text = "Heavy outline", value = "THICKOUTLINE" },
     }
+    local styleControlY = y
+    local styleColW = math.floor((CB_COL_W * 2 + CHECK_COL_GAP - 16) / 2)
     CreateOptionDropdown(y, "Edge style", FontMagicDB and FontMagicDB.scrollingTextOutlineMode or "", outlineChoices, function(val)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextOutlineMode = val
@@ -4378,9 +4402,10 @@ BuildCombatOptionsUI = function()
             flags = (flags ~= "") and (flags .. ",MONOCHROME") or "MONOCHROME"
         end
         return "12345", path, flags
-    end)
+    end,
+    { col = 0, width = styleColW })
 
-    local monoCB = CreateOptionCheckbox(1, y - 34, "Monochrome rendering", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
+    local monoCB = CreateOptionCheckbox(1, styleControlY, "Monochrome rendering", FontMagicDB and FontMagicDB.scrollingTextMonochrome and true or false, function(self)
         FontMagicDB = FontMagicDB or {}
         FontMagicDB.scrollingTextMonochrome = self:GetChecked() and true or false
         ApplySavedCombatFont()
@@ -4390,7 +4415,7 @@ BuildCombatOptionsUI = function()
         pcall(monoCB.Disable, monoCB)
     end
 
-    CreateOptionSlider(y - 64, "Shadow", "Shadow distance", 0, 4, 1,
+    CreateOptionSlider(styleControlY - 56, "Shadow", "Shadow distance", 0, 4, 1,
         tonumber(FontMagicDB and FontMagicDB.scrollingTextShadowOffset) or 1,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -4400,10 +4425,12 @@ BuildCombatOptionsUI = function()
         end,
         "Sets how far the shadow sits from the text. Use 0 to disable shadow rendering.",
         FontMagicDB and FontMagicDB.applyToScrollingText,
-        "Enable 'Scrolling combat text feed' to change this setting."
+        "Enable 'Scrolling combat text feed' to change this setting.",
+        true,
+        { col = 1, width = styleColW }
     )
 
-    y = y - 130
+    y = styleControlY - 124
 
     if EnsureIncomingReady() then
         y = AddHeader("Incoming message filters", y)
@@ -4469,7 +4496,9 @@ BuildCombatOptionsUI = function()
         y = y - 20
     end
 
-    CreateOptionSlider(y, "Gravity", "Motion gravity", gravityMin, gravityMax, FLOATING_MOTION_STEP,
+    local motionControlY = y
+    local motionColW = math.floor((CB_COL_W * 2 + CHECK_COL_GAP - 16) / 2)
+    CreateOptionSlider(motionControlY, "Gravity", "Motion gravity", gravityMin, gravityMax, FLOATING_MOTION_STEP,
         tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -4479,10 +4508,11 @@ BuildCombatOptionsUI = function()
         "Controls arc intensity while world-space numbers move upward and settle.",
         gravitySupported,
         "Gravity control is unavailable on this client version.",
-        false
+        false,
+        { col = 0, width = motionColW }
     )
 
-    CreateOptionSlider(y - 54, "Fade", "Fade duration", fadeMin, fadeMax, FLOATING_MOTION_STEP,
+    CreateOptionSlider(motionControlY, "Fade", "Fade duration", fadeMin, fadeMax, FLOATING_MOTION_STEP,
         tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -4492,10 +4522,11 @@ BuildCombatOptionsUI = function()
         "Controls how long world-space numbers remain visible before fading.",
         fadeSupported,
         "Fade duration control is unavailable on this client version.",
-        false
+        false,
+        { col = 1, width = motionColW }
     )
 
-    y = y - 120
+    y = motionControlY - 66
 
     local extras = CollectExtraBoolCombatTextCVars()
     if #extras > 0 then
