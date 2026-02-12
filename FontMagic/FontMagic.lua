@@ -567,11 +567,14 @@ if type(FontMagicDB.scrollingTextOutlineMode) ~= "string" or FontMagicDB.scrolli
 end
 if FontMagicDB.scrollingTextMonochrome == nil then FontMagicDB.scrollingTextMonochrome = false end
 if type(FontMagicDB.scrollingTextShadowOffset) ~= "number" then FontMagicDB.scrollingTextShadowOffset = 1 end
+local FLOATING_GRAVITY_CANDIDATES = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
+local FLOATING_FADE_CANDIDATES = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+
 if type(FontMagicDB.floatingTextGravity) ~= "number" then
-    FontMagicDB.floatingTextGravity = GetResolvedSettingNumber({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }, 1.0)
+    FontMagicDB.floatingTextGravity = GetResolvedSettingNumber(FLOATING_GRAVITY_CANDIDATES, 1.0)
 end
 if type(FontMagicDB.floatingTextFadeDuration) ~= "number" then
-    FontMagicDB.floatingTextFadeDuration = GetResolvedSettingNumber({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }, 1.0)
+    FontMagicDB.floatingTextFadeDuration = GetResolvedSettingNumber(FLOATING_FADE_CANDIDATES, 1.0)
 end
 
 -- Migration: older versions stored combat overrides per-character. Move them into the account DB.
@@ -938,6 +941,40 @@ local FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX = 0.00, 2.00
 local FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX = 0.10, 3.00
 local FLOATING_MOTION_STEP = 0.05
 
+local function ResolveFloatingMotionUIState()
+    local gravityName = ResolveCVarName(FLOATING_GRAVITY_CANDIDATES)
+    local fadeName = ResolveCVarName(FLOATING_FADE_CANDIDATES)
+    local gravitySupported = (gravityName ~= nil)
+    local fadeSupported = (fadeName ~= nil)
+
+    local gravityMin, gravityMax = FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX
+    local fadeMin, fadeMax = FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX
+
+    if gravitySupported then
+        local lo, hi = ResolveNumericRange(gravityName)
+        if lo ~= nil and hi ~= nil then
+            gravityMin, gravityMax = lo, hi
+        end
+    end
+    if fadeSupported then
+        local lo, hi = ResolveNumericRange(fadeName)
+        if lo ~= nil and hi ~= nil then
+            fadeMin, fadeMax = lo, hi
+        end
+    end
+
+    return {
+        gravityName = gravityName,
+        fadeName = fadeName,
+        gravitySupported = gravitySupported,
+        fadeSupported = fadeSupported,
+        gravityMin = gravityMin,
+        gravityMax = gravityMax,
+        fadeMin = fadeMin,
+        fadeMax = fadeMax,
+    }
+end
+
 local function ResolveMotionClampRange(candidates, fallbackMin, fallbackMax)
     local name = ResolveCVarName(candidates)
     if name then
@@ -956,8 +993,8 @@ local function ApplyFloatingTextMotionSettings()
         return v
     end
 
-    local gravityCandidates = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
-    local fadeCandidates = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+    local gravityCandidates = FLOATING_GRAVITY_CANDIDATES
+    local fadeCandidates = FLOATING_FADE_CANDIDATES
 
     local gravityTargets = ResolveConsoleSettingTargets(gravityCandidates)
     local fadeTargets = ResolveConsoleSettingTargets(fadeCandidates)
@@ -4044,25 +4081,11 @@ BuildCombatOptionsUI = function()
 
     y = AddHeader("Floating text motion", y)
     y = AddSectionNote(y, "Tune movement behavior for world-space floating numbers. Changes apply immediately when supported.")
-    local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
-    local fadeName = ResolveCVarName({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
-    local gravitySupported = (gravityName ~= nil)
-    local fadeSupported = (fadeName ~= nil)
-
-    local gravityMin, gravityMax = FLOATING_GRAVITY_FALLBACK_MIN, FLOATING_GRAVITY_FALLBACK_MAX
-    local fadeMin, fadeMax = FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX
-    if gravitySupported then
-        local lo, hi = ResolveNumericRange(gravityName)
-        if lo ~= nil and hi ~= nil then
-            gravityMin, gravityMax = lo, hi
-        end
-    end
-    if fadeSupported then
-        local lo, hi = ResolveNumericRange(fadeName)
-        if lo ~= nil and hi ~= nil then
-            fadeMin, fadeMax = lo, hi
-        end
-    end
+    local motionState = ResolveFloatingMotionUIState()
+    local gravitySupported = motionState.gravitySupported
+    local fadeSupported = motionState.fadeSupported
+    local gravityMin, gravityMax = motionState.gravityMin, motionState.gravityMax
+    local fadeMin, fadeMax = motionState.fadeMin, motionState.fadeMax
 
     if not gravitySupported or not fadeSupported then
         local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -4502,8 +4525,8 @@ local function ResetCombatOptionsOnly()
             return tonumber(GetCVarString(name))
         end
 
-        local gravityCandidates = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
-        local fadeCandidates = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+        local gravityCandidates = FLOATING_GRAVITY_CANDIDATES
+        local fadeCandidates = FLOATING_FADE_CANDIDATES
 
         local g = ResetNumericCVarToDefault(gravityCandidates)
         local f = ResetNumericCVarToDefault(fadeCandidates)
@@ -4878,7 +4901,7 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("CVAR_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-didFirstWorldApply = false
+local didFirstWorldApply = false
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then

@@ -1,8 +1,6 @@
-FontMagic next-run candidates (prioritized)
-
-1) Add a tiny in-panel 'data refreshed' timestamp/indicator for combat CVars to make pending-vs-live state even clearer.
-2) Consolidate repeated dropdown selection code paths into one helper to reduce maintenance risk.
-3) Add optional out-of-combat deferred apply queue messaging for any future protected-frame interactions.
-4) Audit and normalize tooltip phrasing/punctuation for all controls for fully consistent microcopy.
-5) Evaluate safe one-time layout constants pass for combat subpanel vertical rhythm on very low UI scales.
-6) Add lightweight debug toggle (dev-only) to print resolved console/CVar mappings for troubleshooting client deltas.
+1) Add a tiny in-panel status line that explains when combat text writes are deferred due to combat lockdown (if any setter ever becomes protected on a future client).
+2) Consolidate repeated "Select Font" label resets into one helper to reduce dropdown-state drift risk.
+3) Add a lightweight debug slash command (off by default) to print resolved CVar/console targets for support diagnostics.
+4) Normalize tooltip phrasing/capitalization across all combat options for tighter UX consistency.
+5) Add a guarded refresh hook so motion sliders auto-refresh bounds when Blizzard settings metadata hot-reloads after login.
+6) Review minimap button drag clamping at non-1.0 UI scale for edge clipping polish.
