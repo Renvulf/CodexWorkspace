@@ -950,30 +950,30 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 --
 -- Constants control the visual spacing and border width so adjustments can
 -- be made in a single location.
-local PAD       = 20   -- distance from the outer edge to the nearest widget
-local BORDER    = 12   -- thickness of the decorative border
-local HEADER_H  = 40   -- space reserved for the InterfaceOptions header
-local PREVIEW_W = 320  -- width of preview and edit boxes
+PAD       = 20   -- distance from the outer edge to the nearest widget
+BORDER    = 12   -- thickness of the decorative border
+HEADER_H  = 40   -- space reserved for the InterfaceOptions header
+PREVIEW_W = 320  -- width of preview and edit boxes
 -- Checkbox column width. Adjusted to ensure the combined width of the two
 -- columns plus the spacing between them equals the preview width. The
 -- preview box is 320px wide and we want 16px of spacing between the two
 -- columns, leaving 304px for the columns themselves. 304/2 = 152.
-local CB_COL_W  = 152  -- checkbox column width
-local DD_COL_W  = 200  -- width allocated for each dropdown column
+CB_COL_W  = 152  -- checkbox column width
+DD_COL_W  = 200  -- width allocated for each dropdown column
 
 -- Dropdown layout (shared by the window and menu builders)
-local DD_COLS      = 2    -- number of dropdowns per row
-local DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
-local DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
+DD_COLS      = 2    -- number of dropdowns per row
+DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
+DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
 
 -- UI spacing tweaks
 -- These values are intentionally centralized so we can keep the layout
 -- balanced while ensuring the lowest checkbox row never collides with the
 -- bottom action buttons.
-local CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
-local CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
-local CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
-local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
+CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
+CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
+CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
+CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -984,9 +984,9 @@ local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
 -- window is scaled.
 -- Compute the window width from the dropdown grid so the columns are
 -- perfectly padded on both sides when using 3 dropdowns per row.
-local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
-local COLLAPSED_W = INNER_W + PAD * 2
-local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
+INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
+COLLAPSED_W = INNER_W + PAD * 2
+LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
 frame.__fmCollapsedW = COLLAPSED_W
 frame:SetSize(COLLAPSED_W, 500 + PAD * 2)
 frame:SetPoint("CENTER")
@@ -2259,7 +2259,7 @@ end
 RefreshScaleControl()
 
 -- 6) PREVIEW & EDIT ---------------------------------------------------------
-local PREVIEW_BOX_H = 84
+PREVIEW_BOX_H = 84
 
 -- Fixed-size preview "textbox" so the preview area stays consistent between fonts.
 local previewBox = CreateFrame("Frame", addonName .. "PreviewBox", frame, backdropTemplate)
@@ -2364,10 +2364,10 @@ end)
 -- 7) COMBAT TEXT OPTIONS (EXPANDABLE PANEL) --------------------------------
 
 -- Right-side expandable panel
-local isExpanded = false
-local RIGHT_PANEL_W = PREVIEW_W + 26
-local PANEL_GAP = 16
-local incomingInit = false
+isExpanded = false
+RIGHT_PANEL_W = PREVIEW_W + 26
+PANEL_GAP = 16
+incomingInit = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
@@ -4308,7 +4308,7 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("CVAR_UPDATE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-local didFirstWorldApply = false
+didFirstWorldApply = false
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
