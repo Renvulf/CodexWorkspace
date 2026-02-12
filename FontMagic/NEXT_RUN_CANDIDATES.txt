@@ -1,5 +1,4 @@
 1) Normalize duplicate metadata filename casing (`Next-run-candidates.txt` vs `NEXT_RUN_CANDIDATES.txt`) after confirming external tooling expectations.
-2) Add one lightweight self-check command that prints resolved combat-text CVars for support/debug reports.
-3) Audit and normalize tooltip wording/tone across all controls for consistent help text style.
-4) Add targeted helper wrappers for GameTooltip usage to centralize nil-safety and reduce repeated guards.
-5) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.
+2) Audit and normalize tooltip wording/tone across all controls for consistent help text style.
+3) Add targeted helper wrappers for GameTooltip usage to centralize nil-safety and reduce repeated guards.
+4) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.

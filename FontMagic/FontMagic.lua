@@ -4810,6 +4810,32 @@ local function PrepareFontMagicWindowForDisplay()
     UpdateMainCombatCheckboxes()
 end
 
+local function PrintCombatSettingsDebugReport()
+    print("|cFF00FF00[FontMagic]|r Combat setting diagnostics (resolved targets):")
+
+    local function PrintLine(label, candidates)
+        local targets = ResolveConsoleSettingTargets(candidates)
+        if type(targets) ~= "table" or #targets == 0 then
+            print(string.format("|cFF00FF00[FontMagic]|r  - %s: unresolved on this client", label))
+            return
+        end
+
+        local first = targets[1]
+        local value = GetCVarString(first.name)
+        local commandKind = (first.commandType == nil or first.commandType == 0) and "CVar" or "Console"
+        print(string.format("|cFF00FF00[FontMagic]|r  - %s: %s (%s) = %s", label, first.name, commandKind, tostring(value)))
+    end
+
+    PrintLine("Show combat text", { "enableFloatingCombatText", "enableCombatText" })
+    PrintLine("Combat text scale", { "floatingCombatTextScale", "floatingCombatTextScale_v2", "floatingCombatTextScale_V2" })
+    PrintLine("World text gravity", FLOATING_GRAVITY_CANDIDATES)
+    PrintLine("World text fade", FLOATING_FADE_CANDIDATES)
+
+    for _, def in ipairs(COMBAT_BOOL_DEFS) do
+        PrintLine(def.label or def.key or "(unknown)", def.candidates)
+    end
+end
+
 SlashCmdList["FCT"] = function(msg)
     -- normalise message for case-insensitive matching and remove whitespace
     msg = tostring(msg or ""):match("^%s*(.-)%s*$"):lower()
@@ -4822,6 +4848,12 @@ SlashCmdList["FCT"] = function(msg)
     elseif msg == "show" then
         if minimapButton then minimapButton:Show() end
         FontMagicDB.minimapHide = false
+        return
+    elseif msg == "status" or msg == "debug" then
+        PrintCombatSettingsDebugReport()
+        return
+    elseif msg == "help" then
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status")
         return
     end
 
