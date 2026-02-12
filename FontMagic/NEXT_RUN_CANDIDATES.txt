@@ -1,5 +1,5 @@
-1) Keyboard navigation between main dropdown groups (Tab/Shift-Tab/arrow) with zero-taint handling.
-2) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
-3) Add lightweight API-availability badges to combat controls for faster troubleshooting.
-4) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
-5) Add an in-panel one-click /reload helper after layout preset changes.
+1) Standardize disabled-state tooltip wording across combat panel controls when APIs are unavailable.
+2) Add lightweight API-availability badges to combat controls for faster troubleshooting.
+3) Evaluate optional debounce for combat-metadata refresh button to avoid accidental rapid rebuilds.
+4) Add an in-panel one-click /reload helper after layout preset changes.
+5) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.
