@@ -3344,7 +3344,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 10)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
-    s:SetObeyStepOnDrag(true)
+    -- Keep drag movement smooth on clients where obey-step dragging can feel
+    -- clicky for decimal steps (for example 0.05). We still snap in code.
+    s:SetObeyStepOnDrag(false)
     _G[s:GetName() .. "Low"]:SetText(string.format("%.2f", minVal))
     _G[s:GetName() .. "High"]:SetText(string.format("%.2f", maxVal))
     local t = s.Text or _G[s:GetName() .. "Text"]
@@ -3360,6 +3362,16 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetScript("OnValueChanged", function(_, v)
         if not enabled then return end
         local rounded = setVal(v)
+        onChange(rounded)
+    end)
+
+    -- Explicitly enable mouse interaction and commit a snapped value after drag.
+    -- This keeps sliders responsive while ensuring exact stepped persistence.
+    s:EnableMouse(true)
+    s:SetScript("OnMouseUp", function(self)
+        if not enabled then return end
+        local rounded = setVal(self:GetValue())
+        self:SetValue(rounded)
         onChange(rounded)
     end)
 
@@ -4044,10 +4056,16 @@ local function ResetCombatOptionsOnly()
             return tonumber(GetCVarString(name))
         end
 
-        local g = ResetNumericCVarToDefault({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
-        local f = ResetNumericCVarToDefault({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
-        if g ~= nil then FontMagicDB.floatingTextGravity = g end
-        if f ~= nil then FontMagicDB.floatingTextFadeDuration = f end
+        local gravityCandidates = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
+        local fadeCandidates = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+
+        local g = ResetNumericCVarToDefault(gravityCandidates)
+        local f = ResetNumericCVarToDefault(fadeCandidates)
+
+        -- Keep SavedVariables synchronized even when a client does not expose
+        -- one of these CVars. This guarantees reset buttons restore defaults in UI.
+        FontMagicDB.floatingTextGravity = g or GetResolvedSettingNumber(gravityCandidates, 1.0)
+        FontMagicDB.floatingTextFadeDuration = f or GetResolvedSettingNumber(fadeCandidates, 1.0)
     end
 
     -- Restore Blizzard's default incoming damage/healing tables (where supported).
