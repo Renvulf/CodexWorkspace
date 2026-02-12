@@ -1,4 +1,4 @@
-1) Add a compact "recently previewed fonts" strip to speed side-by-side comparisons.
-2) Add a lightweight "last refresh result details" tooltip for metadata refresh failures (client API gaps).
-3) Add a quick in-panel diagnostics copy button for resolved combat setting targets to simplify support reports.
-4) Add an explicit "Applied vs Previewing" badge in dropdown labels for clearer pending-state visibility.
+1) Add a lightweight "last refresh result details" tooltip for metadata refresh failures (client API gaps).
+2) Add a quick in-panel diagnostics copy button for resolved combat setting targets to simplify support reports.
+3) Add an explicit "Applied vs Previewing" badge in dropdown labels for clearer pending-state visibility.
+4) Add optional per-character recent preview history persistence (with account-wide fallback).
