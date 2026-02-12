@@ -1,5 +1,5 @@
-1) Add an explicit non-backdrop visual fallback style for clients/templates where SetBackdrop is unavailable.
-2) Validate minimap icon drag UX with very small minimap scales and clamp hit-region if accidental drags are reported.
-3) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth at 1080p.
-4) Consider a compact mode preset for low UI scale users without changing current defaults.
-5) Add optional keyboard navigation between dropdown groups in the main panel (arrow/Tab shortcuts) if it can be done without taint risk.
+1) Validate minimap icon drag UX with very small minimap scales and clamp hit-region if accidental drags are reported.
+2) Evaluate a two-column reflow for the expanded combat options panel to reduce scroll depth at 1080p.
+3) Consider a compact mode preset for low UI scale users without changing current defaults.
+4) Add optional keyboard navigation between dropdown groups in the main panel (arrow/Tab shortcuts) if it can be done without taint risk.
+5) Audit combat-panel control tooltips for API-unavailable states and standardize disabled-state help text wording.
