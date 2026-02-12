@@ -986,6 +986,18 @@ local function ResolveMotionClampRange(candidates, fallbackMin, fallbackMax)
     return fallbackMin, fallbackMax
 end
 
+local function QuantizeFloatingMotionValue(v, minVal, maxVal)
+    local lo, hi = NormalizeSliderBounds(minVal, maxVal, minVal, maxVal)
+    local step = NormalizeSliderStep(FLOATING_MOTION_STEP, lo, hi)
+    local snapped = math.floor((((tonumber(v) or lo) - lo) / step) + 0.5) * step + lo
+    if snapped < lo then snapped = lo end
+    if snapped > hi then snapped = hi end
+
+    local decimals = GetSliderDisplayDecimals(step, lo, hi)
+    local mult = 10 ^ decimals
+    return math.floor(snapped * mult + 0.5) / mult, decimals
+end
+
 local function ApplyFloatingTextMotionSettings()
     local function clamp(v, lo, hi)
         if v < lo then return lo end
@@ -1003,17 +1015,19 @@ local function ApplyFloatingTextMotionSettings()
     local fadeMin, fadeMax = ResolveMotionClampRange(fadeCandidates, FLOATING_FADE_FALLBACK_MIN, FLOATING_FADE_FALLBACK_MAX)
 
     if #gravityTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
-        local g = clamp(FontMagicDB.floatingTextGravity, gravityMin, gravityMax)
+        local g, gDecimals = QuantizeFloatingMotionValue(FontMagicDB.floatingTextGravity, gravityMin, gravityMax)
+        g = clamp(g, gravityMin, gravityMax)
         FontMagicDB.floatingTextGravity = g
-        local formatted = string.format("%.2f", g)
+        local formatted = string.format("%0." .. tostring(gDecimals) .. "f", g)
         for _, target in ipairs(gravityTargets) do
             ApplyConsoleSetting(target.name, target.commandType, formatted)
         end
     end
     if #fadeTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
-        local f = clamp(FontMagicDB.floatingTextFadeDuration, fadeMin, fadeMax)
+        local f, fDecimals = QuantizeFloatingMotionValue(FontMagicDB.floatingTextFadeDuration, fadeMin, fadeMax)
+        f = clamp(f, fadeMin, fadeMax)
         FontMagicDB.floatingTextFadeDuration = f
-        local formatted = string.format("%.2f", f)
+        local formatted = string.format("%0." .. tostring(fDecimals) .. "f", f)
         for _, target in ipairs(fadeTargets) do
             ApplyConsoleSetting(target.name, target.commandType, formatted)
         end
@@ -1730,13 +1744,22 @@ local function ResolveNumericRangeFromCVarInfo(name)
     end
     if not getInfo then return nil, nil end
 
-    local ok, info = pcall(getInfo, name)
-    if not ok or type(info) ~= "table" then
+    local ok, a, b, c, d, e, f, g, h, i = pcall(getInfo, name)
+    if not ok then
         return nil, nil
     end
 
-    local lo = tonumber(info.minValue or info.min)
-    local hi = tonumber(info.maxValue or info.max)
+    local lo, hi
+    if type(a) == "table" then
+        lo = tonumber(a.minValue or a.min)
+        hi = tonumber(a.maxValue or a.max)
+    else
+        -- On some older client branches GetCVarInfo returns discrete values.
+        -- If min/max are present they are trailing values (commonly positions 8/9).
+        lo = tonumber(h)
+        hi = tonumber(i)
+    end
+
     if lo ~= nil and hi ~= nil and hi >= lo then
         return lo, hi
     end
