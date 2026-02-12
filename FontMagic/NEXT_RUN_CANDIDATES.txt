@@ -1,5 +1,5 @@
-1) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.
-2) Add a tiny in-UI debug pane (hidden behind a slash command) to show resolved CVar/console names per client for faster support triage.
-3) Add a non-invasive UI pass for keyboard/gamepad focus order in the main panel and combat options panel.
-4) Review combat options panel for a larger two-column reflow that shortens scroll depth without reducing clarity.
-5) Add an optional compact mode for small UI scale users that preserves current default layout as-is.
+1) Add a tiny in-UI debug pane (hidden behind a slash command) to show resolved CVar/console names per client for faster support triage.
+2) Add a non-invasive UI pass for keyboard/gamepad focus order in the main panel and combat options panel.
+3) Review combat options panel for a larger two-column reflow that shortens scroll depth without reducing clarity.
+4) Add an optional compact mode for small UI scale users that preserves current default layout as-is.
+5) Evaluate a lightweight frame-pool pattern for dropdown hover preview decorations to further reduce recycled-button edge cases.

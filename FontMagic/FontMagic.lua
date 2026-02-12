@@ -1881,6 +1881,8 @@ end
 
 local __fmHoverPrevFrame, __fmHoverPrevText
 local __fmHoverPrevToken = 0
+local __fmHoverPrevFollowUntil = 0
+local FM_HOVER_PREVIEW_FOLLOW_DURATION = 0.9
 
 local function __fmGetCursorScaled()
     if type(GetCursorPosition) ~= "function" then return 0, 0 end
@@ -1964,9 +1966,14 @@ local function __fmEnsureHoverPreviewFrame()
     f:Hide()
 
     f.__fmFollowCursor = true
-    f:SetScript("OnUpdate", function(self)
-        if self:IsShown() and self.__fmFollowCursor then
+    f:SetScript("OnUpdate", function(self, elapsed)
+        if not self:IsShown() then return end
+
+        if self.__fmFollowCursor then
             __fmPositionHoverPreview(self)
+            if type(GetTime) == "function" and GetTime() >= (__fmHoverPrevFollowUntil or 0) then
+                self.__fmFollowCursor = false
+            end
         end
     end)
 
@@ -2050,6 +2057,12 @@ local function __fmShowHoverPreview(display, path, flags)
     end)
 
     __fmPositionHoverPreview(f)
+    if type(GetTime) == "function" then
+        __fmHoverPrevFollowUntil = GetTime() + FM_HOVER_PREVIEW_FOLLOW_DURATION
+    else
+        __fmHoverPrevFollowUntil = 0
+    end
+    f.__fmFollowCursor = true
     f:Show()
 end
 
@@ -2111,6 +2124,11 @@ if type(hooksecurefunc) == "function" then
     end
     if type(UIDropDownMenu_HideDropDownMenu) == "function" then
         pcall(hooksecurefunc, "UIDropDownMenu_HideDropDownMenu", __fmHideHoverPreview)
+    end
+    if type(ToggleDropDownMenu) == "function" then
+        pcall(hooksecurefunc, "ToggleDropDownMenu", function()
+            __fmHideHoverPreview()
+        end)
     end
 end
 
