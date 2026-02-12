@@ -1467,6 +1467,24 @@ local function GetDropDownListButton(level, index)
     return _G and _G["DropDownList" .. tostring(level) .. "Button" .. tostring(index)] or nil
 end
 
+local __fmClearMenuButtonHoverPreview
+local __fmClearMenuButtonFavoriteDecorations
+
+local function ClearDropDownListDecorations(level)
+    if type(level) ~= "number" then return end
+    local listFrame = _G and _G["DropDownList" .. tostring(level)]
+    local count = tonumber(listFrame and listFrame.numButtons) or 0
+    if count <= 0 then return end
+
+    for i = 1, count do
+        local btn = GetDropDownListButton(level, i)
+        if btn then
+            __fmClearMenuButtonHoverPreview(btn)
+            __fmClearMenuButtonFavoriteDecorations(btn)
+        end
+    end
+end
+
 local function GetStepDecimals(step)
     local decimals = 0
     local n = tonumber(step)
@@ -1572,6 +1590,16 @@ local function SnapSliderToStep(v, minVal, maxVal, step)
     local precision = GetSliderDisplayDecimals(step, minVal, maxVal)
     local mult = 10 ^ precision
     snapped = math.floor(snapped * mult + 0.5) / mult
+
+    -- Guard against floating-point drift around endpoints (for example values
+    -- like 1.999999 when max is 2.0). This keeps UI labels and persisted values
+    -- perfectly aligned with the actual clamped range.
+    if math.abs(snapped - minVal) <= epsilon then
+        snapped = minVal
+    elseif math.abs(maxVal - snapped) <= epsilon then
+        snapped = maxVal
+    end
+
     return snapped
 end
 
@@ -1934,14 +1962,14 @@ local function __fmAttachHoverPreviewToMenuButton(btn, display, cache)
     end
 end
 
-local function __fmClearMenuButtonHoverPreview(btn)
+__fmClearMenuButtonHoverPreview = function(btn)
     if not btn then return end
     btn.__fmHoverPrevName  = nil
     btn.__fmHoverPrevPath  = nil
     btn.__fmHoverPrevFlags = nil
 end
 
-local function __fmClearMenuButtonFavoriteDecorations(btn)
+__fmClearMenuButtonFavoriteDecorations = function(btn)
     if not btn then return end
     if btn.__fmStar then
         UpdateFavoriteStar(btn, nil)
@@ -2368,6 +2396,7 @@ for idx, grp in ipairs(order) do
 
     UIDropDownMenu_Initialize(dd, function()
         local level = UIDROPDOWNMENU_MENU_LEVEL or 1
+        ClearDropDownListDecorations(level)
         local added = false
         local buttonIndex = 0
 
@@ -3583,6 +3612,7 @@ local function CreateOptionDropdown(y, label, selectedValue, values, onSelect, t
     UIDropDownMenu_Initialize(dd, function(self, level)
         level = level or 1
         if level ~= 1 then return end
+        ClearDropDownListDecorations(level)
         local buttonIndex = 0
         for _, infoData in ipairs(values) do
             local info = UIDropDownMenu_CreateInfo()
