@@ -3,7 +3,7 @@
 ## Notes: Display customizable floating combat text with live font & size adjustments. Type /float or click the minimap icon to configure; install |cff00ff00FontMagicCustomFonts|r to use your own fonts.
 ## IconTexture: Interface\AddOns\FontMagic\FontMagic_MinimapIcon_Best_64
 ## Author: Renvulf
-## Version: 3.2.45
+## Version: 3.2.46
 ## SavedVariables: FontMagicDB
 ## SavedVariablesPerCharacter: FontMagicPCDB
 
