@@ -1711,10 +1711,12 @@ local BuildCombatOptionsUI
 local RefreshCombatMetadataAndUI
 local combatMetadataStatusFS
 local combatMetadataRefreshBtn
+local combatDiagnosticsCopyBtn
 local combatMetadataRefreshCooldownUntil = 0
 local combatMetadataRefreshPending = false
 local COMBAT_METADATA_REFRESH_COOLDOWN = 1.5
 local combatMetadataLastRefreshDetails
+local combatDiagnosticsCopyFrame
 
 local function SetCombatMetadataStatus(message, r, g, b)
     if not (combatMetadataStatusFS and combatMetadataStatusFS.SetText) then
@@ -1774,6 +1776,131 @@ local function BuildCombatMetadataRefreshTooltipBody()
         details = "No refresh attempt has been recorded yet in this session."
     end
     return base .. "\n\nLast refresh result:\n" .. details
+end
+
+local function BuildCombatSettingsDebugLines()
+    local lines = {
+        "Combat setting diagnostics (resolved targets):",
+    }
+
+    local function AddLine(label, candidates)
+        local targets = ResolveConsoleSettingTargets(candidates)
+        if type(targets) ~= "table" or #targets == 0 then
+            table.insert(lines, string.format("- %s: unresolved on this client", label))
+            return
+        end
+
+        local first = targets[1]
+        local value = GetCVarString(first.name)
+        local commandKind = (first.commandType == nil or first.commandType == 0) and "CVar" or "Console"
+        table.insert(lines, string.format("- %s: %s (%s) = %s", label, first.name, commandKind, tostring(value)))
+    end
+
+    AddLine("Show combat text", { "enableFloatingCombatText", "enableCombatText" })
+    AddLine("Combat text scale", { "floatingCombatTextScale", "floatingCombatTextScale_v2", "floatingCombatTextScale_V2" })
+    AddLine("World text gravity", FLOATING_GRAVITY_CANDIDATES)
+    AddLine("World text fade", FLOATING_FADE_CANDIDATES)
+
+    for _, def in ipairs(COMBAT_BOOL_DEFS) do
+        AddLine(def.label or def.key or "(unknown)", def.candidates)
+    end
+
+    return lines
+end
+
+local function BuildCombatSettingsDebugText()
+    return table.concat(BuildCombatSettingsDebugLines(), "\n")
+end
+
+local function EnsureCombatDiagnosticsCopyFrame()
+    if combatDiagnosticsCopyFrame then
+        return combatDiagnosticsCopyFrame
+    end
+
+    local modal = CreateFrame("Frame", addonName .. "CombatDiagnosticsCopyFrame", UIParent, backdropTemplate)
+    modal:SetSize(560, 360)
+    modal:SetPoint("CENTER")
+    ApplyBackdropCompat(modal, {
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    }, 0, 0, 0, 0.94)
+    modal:SetFrameStrata("FULLSCREEN_DIALOG")
+    modal:SetToplevel(true)
+    modal:EnableMouse(true)
+    modal:Hide()
+
+    local title = modal:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    title:SetPoint("TOPLEFT", modal, "TOPLEFT", 14, -12)
+    title:SetPoint("RIGHT", modal, "RIGHT", -14, 0)
+    title:SetJustifyH("LEFT")
+    title:SetText("Combat Diagnostics Copy")
+
+    local note = modal:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    note:SetPoint("TOPRIGHT", modal, "TOPRIGHT", -14, -30)
+    note:SetJustifyH("LEFT")
+    note:SetJustifyV("TOP")
+    note:SetText("Select all text with Ctrl+A, then copy with Ctrl+C and paste it into a support message.")
+
+    local editScroll = CreateFrame("ScrollFrame", addonName .. "CombatDiagnosticsCopyScroll", modal, "UIPanelScrollFrameTemplate")
+    editScroll:SetPoint("TOPLEFT", modal, "TOPLEFT", 14, -64)
+    editScroll:SetPoint("BOTTOMRIGHT", modal, "BOTTOMRIGHT", -34, 44)
+
+    local box = CreateFrame("EditBox", nil, editScroll)
+    box:SetMultiLine(true)
+    box:SetAutoFocus(false)
+    local copyFontObject = ChatFontNormal or GameFontHighlightSmall or GameFontNormalSmall
+    if copyFontObject and box.SetFontObject then
+        box:SetFontObject(copyFontObject)
+    end
+    box:SetWidth(500)
+    box:SetScript("OnEscapePressed", function() modal:Hide() end)
+    box:SetScript("OnCursorChanged", function(self, _, y, _, h)
+        if editScroll and editScroll.SetVerticalScroll then
+            editScroll:SetVerticalScroll(y)
+        end
+        if self and self.SetHeight then
+            self:SetHeight(math.max((y or 0) + (h or 0) + 8, 260))
+        end
+    end)
+    editScroll:SetScrollChild(box)
+
+    local closeBtn = CreateFrame("Button", nil, modal, "UIPanelButtonTemplate")
+    closeBtn:SetSize(96, 22)
+    closeBtn:SetPoint("BOTTOMRIGHT", modal, "BOTTOMRIGHT", -14, 12)
+    closeBtn:SetText(CLOSE or "Close")
+    closeBtn:SetScript("OnClick", function() modal:Hide() end)
+
+    local refreshBtn = CreateFrame("Button", nil, modal, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(120, 22)
+    refreshBtn:SetPoint("RIGHT", closeBtn, "LEFT", -8, 0)
+    refreshBtn:SetText("Refresh text")
+    refreshBtn:SetScript("OnClick", function()
+        box:SetText(BuildCombatSettingsDebugText())
+        box:HighlightText(0)
+        box:SetFocus()
+    end)
+
+    modal:SetScript("OnShow", function(self)
+        self:Raise()
+        box:SetText(BuildCombatSettingsDebugText())
+        box:HighlightText(0)
+        box:SetFocus()
+    end)
+
+    modal.__fmEditBox = box
+    combatDiagnosticsCopyFrame = modal
+    return modal
+end
+
+local function ShowCombatDiagnosticsCopyFrame()
+    local modal = EnsureCombatDiagnosticsCopyFrame()
+    if not modal then
+        return
+    end
+    modal:Show()
 end
 
 
@@ -3690,9 +3817,18 @@ combatMetadataRefreshBtn:SetScript("OnClick", function()
 end)
 AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", BuildCombatMetadataRefreshTooltipBody)
 
+combatDiagnosticsCopyBtn = CreateFrame("Button", nil, combatPanel, "UIPanelButtonTemplate")
+combatDiagnosticsCopyBtn:SetSize(92, 20)
+combatDiagnosticsCopyBtn:SetPoint("RIGHT", combatMetadataRefreshBtn, "LEFT", -8, 0)
+combatDiagnosticsCopyBtn:SetText("Copy report")
+combatDiagnosticsCopyBtn:SetScript("OnClick", function()
+    ShowCombatDiagnosticsCopyFrame()
+end)
+AttachTooltip(combatDiagnosticsCopyBtn, "Copy diagnostics report", "Opens a copy-friendly report of resolved combat setting targets for support troubleshooting.")
+
 combatMetadataStatusFS = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 combatMetadataStatusFS:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -24)
-combatMetadataStatusFS:SetPoint("RIGHT", combatMetadataRefreshBtn, "LEFT", -8, 0)
+combatMetadataStatusFS:SetPoint("RIGHT", combatDiagnosticsCopyBtn, "LEFT", -8, 0)
 combatMetadataStatusFS:SetJustifyH("LEFT")
 SetCombatMetadataStatus("If any slider range looks incorrect, click Refresh setting data once.")
 SetCombatMetadataRefreshDetails("No refresh attempt has been recorded yet in this session.")
@@ -5751,28 +5887,9 @@ local function PrepareFontMagicWindowForDisplay()
 end
 
 local function PrintCombatSettingsDebugReport()
-    print("|cFF00FF00[FontMagic]|r Combat setting diagnostics (resolved targets):")
-
-    local function PrintLine(label, candidates)
-        local targets = ResolveConsoleSettingTargets(candidates)
-        if type(targets) ~= "table" or #targets == 0 then
-            print(string.format("|cFF00FF00[FontMagic]|r  - %s: unresolved on this client", label))
-            return
-        end
-
-        local first = targets[1]
-        local value = GetCVarString(first.name)
-        local commandKind = (first.commandType == nil or first.commandType == 0) and "CVar" or "Console"
-        print(string.format("|cFF00FF00[FontMagic]|r  - %s: %s (%s) = %s", label, first.name, commandKind, tostring(value)))
-    end
-
-    PrintLine("Show combat text", { "enableFloatingCombatText", "enableCombatText" })
-    PrintLine("Combat text scale", { "floatingCombatTextScale", "floatingCombatTextScale_v2", "floatingCombatTextScale_V2" })
-    PrintLine("World text gravity", FLOATING_GRAVITY_CANDIDATES)
-    PrintLine("World text fade", FLOATING_FADE_CANDIDATES)
-
-    for _, def in ipairs(COMBAT_BOOL_DEFS) do
-        PrintLine(def.label or def.key or "(unknown)", def.candidates)
+    local lines = BuildCombatSettingsDebugLines()
+    for i = 1, #lines do
+        print("|cFF00FF00[FontMagic]|r " .. tostring(lines[i]))
     end
 end
 
