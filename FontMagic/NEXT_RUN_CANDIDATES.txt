@@ -1,4 +1,4 @@
-1) Add a quick in-panel diagnostics copy button for resolved combat setting targets to simplify support reports.
-2) Add an explicit "Applied vs Previewing" badge in dropdown labels for clearer pending-state visibility.
-3) Add optional per-character recent preview history persistence (with account-wide fallback).
-4) Add a compact read-only custom-font availability summary (loaded/missing count) in the Custom category tooltip.
+1) Add an explicit "Applied vs Previewing" badge in dropdown labels for clearer pending-state visibility.
+2) Add optional per-character recent preview history persistence (with account-wide fallback).
+3) Add a compact read-only custom-font availability summary (loaded/missing count) in the Custom category tooltip.
+4) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
