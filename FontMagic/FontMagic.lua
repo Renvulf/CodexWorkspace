@@ -1704,6 +1704,7 @@ local recentPreviewContainer
 local recentPreviewButtons = {}
 local recentPreviewEntries = {}
 local RECENT_PREVIEW_MAX = 5
+local RECENT_PREVIEW_DB_MAX = 12
 local SyncPreviewToAppliedFont
 local RefreshDropdownSelectionLabels
 local UpdatePendingStateText
@@ -1718,6 +1719,54 @@ local combatMetadataRefreshPending = false
 local COMBAT_METADATA_REFRESH_COOLDOWN = 1.5
 local combatMetadataLastRefreshDetails
 local combatDiagnosticsCopyFrame
+
+local function CopyRecentPreviewEntriesForStorage(entries)
+    local out = {}
+    if type(entries) ~= "table" then
+        return out
+    end
+
+    for i = 1, math.min(#entries, RECENT_PREVIEW_DB_MAX) do
+        local row = entries[i]
+        if type(row) == "table" and type(row.key) == "string" and row.key ~= "" then
+            out[#out + 1] = {
+                key = row.key,
+                display = (type(row.display) == "string" and row.display ~= "") and row.display or nil,
+                group = (type(row.group) == "string" and row.group ~= "") and row.group or nil,
+            }
+        end
+    end
+
+    return out
+end
+
+local function PersistRecentPreviewEntries()
+    local payload = CopyRecentPreviewEntriesForStorage(recentPreviewEntries)
+
+    if type(FontMagicPCDB) == "table" then
+        FontMagicPCDB.recentPreviewEntries = payload
+    end
+
+    if type(FontMagicDB) == "table" then
+        -- Keep a lightweight account-wide fallback for characters that have no local history yet.
+        FontMagicDB.recentPreviewEntriesAccount = payload
+    end
+end
+
+local function RestoreRecentPreviewEntriesFromSavedVariables()
+    local source
+
+    if type(FontMagicPCDB) == "table" and type(FontMagicPCDB.recentPreviewEntries) == "table" and #FontMagicPCDB.recentPreviewEntries > 0 then
+        source = FontMagicPCDB.recentPreviewEntries
+    elseif type(FontMagicDB) == "table" and type(FontMagicDB.recentPreviewEntriesAccount) == "table" then
+        source = FontMagicDB.recentPreviewEntriesAccount
+    else
+        source = nil
+    end
+
+    recentPreviewEntries = CopyRecentPreviewEntriesForStorage(source)
+    PersistRecentPreviewEntries()
+end
 
 local function SetCombatMetadataStatus(message, r, g, b)
     if not (combatMetadataStatusFS and combatMetadataStatusFS.SetText) then
@@ -1958,6 +2007,8 @@ local function PushRecentPreviewEntry(entry)
     while #recentPreviewEntries > RECENT_PREVIEW_MAX do
         table.remove(recentPreviewEntries)
     end
+
+    PersistRecentPreviewEntries()
 end
 
 local function RefreshRecentPreviewStrip()
@@ -6287,6 +6338,7 @@ local didFirstWorldApply = false
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_LOGIN" then
+        RestoreRecentPreviewEntriesFromSavedVariables()
         -- Build console index, register options, then apply only the saved overrides.
         RefreshConsoleCommandIndex()
         MigrateSavedFontKeys()

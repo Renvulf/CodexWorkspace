@@ -1,4 +1,4 @@
-1) Add optional per-character recent preview history persistence (with account-wide fallback).
-2) Add a compact read-only custom-font availability summary (loaded/missing count) in the Custom category tooltip.
-3) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
-4) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
+1) Add a compact read-only custom-font availability summary (loaded/missing count) in the Custom category tooltip.
+2) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
+3) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
+4) Add an optional import/export string for favorites only (no combat settings) with strict validation.
