@@ -6286,6 +6286,50 @@ local function PrintFavoritesIntegrityReport()
     print("|cFF00FF00[FontMagic]|r This check is read-only and never mutates SavedVariables.")
 end
 
+local function CleanupFavoritesIntegrity()
+    local favs = EnsureFavorites()
+    local cleaned = {}
+    local changed = false
+
+    local removedStale, removedMalformed, dedupedCanon = 0, 0, 0
+
+    for key, enabled in pairs(favs) do
+        local validEntry = (enabled == true) and (type(key) == "string") and (key ~= "")
+        if validEntry then
+            local canon = CanonicalizeFontKey(key)
+            if canon then
+                if cleaned[canon] == true then
+                    dedupedCanon = dedupedCanon + 1
+                    changed = true
+                else
+                    cleaned[canon] = true
+                    if canon ~= key then
+                        changed = true
+                    end
+                end
+            else
+                removedStale = removedStale + 1
+                changed = true
+            end
+        elseif enabled ~= nil then
+            removedMalformed = removedMalformed + 1
+            changed = true
+        end
+    end
+
+    if changed then
+        FontMagicDB.favorites = cleaned
+    end
+
+    return {
+        changed = changed,
+        kept = (function() local n=0 for _ in pairs(cleaned) do n=n+1 end return n end)(),
+        removedStale = removedStale,
+        removedMalformed = removedMalformed,
+        dedupedCanon = dedupedCanon,
+    }
+end
+
 SlashCmdList["FCT"] = function(msg)
     -- normalize for matching while preserving original casing for payloads.
     local rawMsg = __fmTrim(tostring(msg or ""))
@@ -6351,6 +6395,24 @@ SlashCmdList["FCT"] = function(msg)
     elseif msgLower == "doctor" or msgLower == "check" then
         PrintFavoritesIntegrityReport()
         return
+    elseif msgLower == "doctor fix" or msgLower == "check fix" then
+        local result = CleanupFavoritesIntegrity()
+        if result.changed then
+            print(string.format("|cFF00FF00[FontMagic]|r Favorites cleanup complete. Kept %d key(s).", result.kept))
+            if result.removedStale > 0 then
+                print(string.format("|cFFFFD200[FontMagic]|r Removed %d stale key(s).", result.removedStale))
+            end
+            if result.removedMalformed > 0 then
+                print(string.format("|cFFFFD200[FontMagic]|r Removed %d malformed key/value entry(s).", result.removedMalformed))
+            end
+            if result.dedupedCanon > 0 then
+                print(string.format("|cFFFFD200[FontMagic]|r Collapsed %d duplicate legacy key(s) into canonical entries.", result.dedupedCanon))
+            end
+            if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
+        else
+            print("|cFF00FF00[FontMagic]|r Favorites cleanup made no changes; list is already clean.")
+        end
+        return
     elseif msgLower == "reload" then
         TriggerSafeReload("/float reload")
         return
@@ -6361,10 +6423,10 @@ SlashCmdList["FCT"] = function(msg)
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_DEFAULT)
         return
     elseif msgLower == "help" then
-        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float doctor, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float doctor, /float doctor fix, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
         print("|cFF00FF00[FontMagic]|r Favorites transfer: /float fav export, /float fav import FMFAV1:Group/Font.ttf,...")
         print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
-        print("|cFF00FF00[FontMagic]|r Diagnostics: /float doctor runs a read-only favorites integrity check.")
+        print("|cFF00FF00[FontMagic]|r Diagnostics: /float doctor runs a read-only check; /float doctor fix safely removes stale/malformed favorites.")
         print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then click Reload Now in the prompt or run /float reload.")
         return
     end
