@@ -2053,6 +2053,101 @@ local function AnalyzeFavoritesIntegrity()
     return result
 end
 
+local FM_FAVORITES_EXCHANGE_PREFIX = "FMFAV1:"
+
+local function CollectCanonicalFavoriteKeysSorted()
+    local favs = EnsureFavorites()
+    local list, seen = {}, {}
+
+    for key, enabled in pairs(favs) do
+        if enabled == true and type(key) == "string" and key ~= "" then
+            local canon = CanonicalizeFontKey(key)
+            if canon and not seen[canon] then
+                seen[canon] = true
+                list[#list + 1] = canon
+            end
+        end
+    end
+
+    table.sort(list, function(a, b)
+        return a:lower() < b:lower()
+    end)
+    return list
+end
+
+local function BuildFavoritesExchangeString()
+    local keys = CollectCanonicalFavoriteKeysSorted()
+    if #keys == 0 then
+        return FM_FAVORITES_EXCHANGE_PREFIX
+    end
+    return FM_FAVORITES_EXCHANGE_PREFIX .. table.concat(keys, ",")
+end
+
+local function ImportFavoritesExchangeString(payload)
+    local text = __fmTrim(payload)
+    if text == "" then
+        return false, "Import string is empty."
+    end
+
+    local prefix = text:sub(1, #FM_FAVORITES_EXCHANGE_PREFIX):upper()
+    if prefix ~= FM_FAVORITES_EXCHANGE_PREFIX then
+        return false, "Invalid format prefix. Expected FMFAV1:."
+    end
+
+    local body = text:sub(#FM_FAVORITES_EXCHANGE_PREFIX + 1)
+    if body == "" then
+        return true, {
+            imported = 0,
+            duplicates = 0,
+            stale = 0,
+            malformed = 0,
+            total = 0,
+        }
+    end
+
+    local staged = {}
+    local stats = {
+        imported = 0,
+        duplicates = 0,
+        stale = 0,
+        malformed = 0,
+        total = 0,
+    }
+
+    for raw in body:gmatch("[^,]+") do
+        local token = __fmTrim(raw)
+        if token ~= "" then
+            stats.total = stats.total + 1
+            local canon = CanonicalizeFontKey(token)
+            if not canon then
+                stats.stale = stats.stale + 1
+            elseif staged[canon] then
+                stats.duplicates = stats.duplicates + 1
+            else
+                staged[canon] = true
+            end
+        else
+            stats.malformed = stats.malformed + 1
+        end
+    end
+
+    if stats.total == 0 and stats.malformed == 0 then
+        return false, "No favorite keys were found in the import string."
+    end
+
+    local favs = EnsureFavorites()
+    for key in pairs(staged) do
+        if favs[key] ~= true then
+            favs[key] = true
+            stats.imported = stats.imported + 1
+        else
+            stats.duplicates = stats.duplicates + 1
+        end
+    end
+
+    return true, stats
+end
+
 local function IsFavorite(key)
     if type(key) ~= "string" or key == "" then
         return false
@@ -6167,10 +6262,39 @@ local function PrintFavoritesIntegrityReport()
 end
 
 SlashCmdList["FCT"] = function(msg)
-    -- normalise message for case-insensitive matching and remove whitespace
-    msg = tostring(msg or ""):match("^%s*(.-)%s*$"):lower()
+    -- normalize for matching while preserving original casing for payloads.
+    local rawMsg = __fmTrim(tostring(msg or ""))
+    local msgLower = rawMsg:lower()
 
-    local radiusValue = msg:match("^radius%s+([%+%-]?%d+)$")
+    local favPayload = rawMsg:match("^[Ff][Aa][Vv]%s+[Ii][Mm][Pp][Oo][Rr][Tt]%s+(.+)$")
+    if favPayload then
+        local ok, result = ImportFavoritesExchangeString(favPayload)
+        if not ok then
+            print("|cFFFF3333[FontMagic]|r Favorites import failed: " .. tostring(result))
+            print("|cFF00FF00[FontMagic]|r Usage: /float fav import FMFAV1:Group/Font.ttf,OtherGroup/Other.ttf")
+            return
+        end
+
+        print(string.format("|cFF00FF00[FontMagic]|r Favorites import complete. Added %d key(s).", tonumber(result.imported) or 0))
+        if (result.duplicates or 0) > 0 then
+            print(string.format("|cFFFFD200[FontMagic]|r Skipped %d duplicate/already-favorited key(s).", result.duplicates))
+        end
+        if (result.stale or 0) > 0 then
+            print(string.format("|cFFFFD200[FontMagic]|r Ignored %d unavailable key(s) not present in this client/build.", result.stale))
+        end
+        if (result.malformed or 0) > 0 then
+            print(string.format("|cFFFFD200[FontMagic]|r Ignored %d malformed token(s).", result.malformed))
+        end
+        if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
+        return
+    elseif msgLower == "fav export" then
+        local encoded = BuildFavoritesExchangeString()
+        print("|cFF00FF00[FontMagic]|r Favorites export string:")
+        print("|cFF00FF00[FontMagic]|r " .. encoded)
+        return
+    end
+
+    local radiusValue = msgLower:match("^radius%s+([%+%-]?%d+)$")
     if radiusValue then
         local n = tonumber(radiusValue)
         if n then
@@ -6183,36 +6307,37 @@ SlashCmdList["FCT"] = function(msg)
         end
     end
 
-    if msg == "hide" then
+    if msgLower == "hide" then
         if minimapButton then minimapButton:Hide() end
         FontMagicDB.minimapHide = true
         print("|cFF00FF00[FontMagic]|r Minimap icon hidden. Use /float show to restore.")
         return
-    elseif msg == "show" then
+    elseif msgLower == "show" then
         if not minimapButton then
             CreateMinimapButton()
         end
         if minimapButton then minimapButton:Show() end
         FontMagicDB.minimapHide = false
         return
-    elseif msg == "status" or msg == "debug" then
+    elseif msgLower == "status" or msgLower == "debug" then
         PrintCombatSettingsDebugReport()
         print("|cFF00FF00[FontMagic]|r Layout preset: " .. tostring((FontMagicDB and FontMagicDB.layoutPreset) or FM_LAYOUT_PRESET_DEFAULT))
         return
-    elseif msg == "doctor" or msg == "check" then
+    elseif msgLower == "doctor" or msgLower == "check" then
         PrintFavoritesIntegrityReport()
         return
-    elseif msg == "reload" then
+    elseif msgLower == "reload" then
         TriggerSafeReload("/float reload")
         return
-    elseif msg == "compact" then
+    elseif msgLower == "compact" then
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_COMPACT)
         return
-    elseif msg == "default" then
+    elseif msgLower == "default" then
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_DEFAULT)
         return
-    elseif msg == "help" then
+    elseif msgLower == "help" then
         print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float doctor, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
+        print("|cFF00FF00[FontMagic]|r Favorites transfer: /float fav export, /float fav import FMFAV1:Group/Font.ttf,...")
         print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
         print("|cFF00FF00[FontMagic]|r Diagnostics: /float doctor runs a read-only favorites integrity check.")
         print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then click Reload Now in the prompt or run /float reload.")
