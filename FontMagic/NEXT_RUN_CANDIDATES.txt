@@ -1,4 +1,4 @@
-1) Add an optional import/export string for favorites only (no combat settings) with strict validation.
-2) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
-3) Add a one-click cleanup action (with confirmation) to remove stale favorites detected by /float doctor.
-4) Add keyboard shortcut hint text to the Reset confirmation dialog for Enter/Escape behavior consistency.
+1) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
+2) Add a one-click cleanup action (with confirmation) to remove stale favorites detected by /float doctor.
+3) Add keyboard shortcut hint text to the Reset confirmation dialog for Enter/Escape behavior consistency.
+4) Add optional copy-to-editbox UI for "fav export" so users can copy the transfer string without chat-frame selection friction.
