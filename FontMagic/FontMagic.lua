@@ -1714,6 +1714,7 @@ local combatMetadataRefreshBtn
 local combatMetadataRefreshCooldownUntil = 0
 local combatMetadataRefreshPending = false
 local COMBAT_METADATA_REFRESH_COOLDOWN = 1.5
+local combatMetadataLastRefreshDetails
 
 local function SetCombatMetadataStatus(message, r, g, b)
     if not (combatMetadataStatusFS and combatMetadataStatusFS.SetText) then
@@ -1746,6 +1747,33 @@ local function SetCombatMetadataRefreshButtonEnabled(enabled)
         end
         combatMetadataRefreshBtn:SetAlpha(0.6)
     end
+end
+
+local function SetCombatMetadataRefreshDetails(summary, detailLines)
+    local text = __fmTrim(summary or "")
+    if text == "" then
+        text = "No refresh attempt has been recorded yet in this session."
+    end
+
+    if type(detailLines) == "table" and #detailLines > 0 then
+        for i = 1, #detailLines do
+            local line = __fmTrim(detailLines[i])
+            if line ~= "" then
+                text = text .. "\n- " .. line
+            end
+        end
+    end
+
+    combatMetadataLastRefreshDetails = text
+end
+
+local function BuildCombatMetadataRefreshTooltipBody()
+    local base = "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed. Rapid clicks are safely throttled."
+    local details = __fmTrim(combatMetadataLastRefreshDetails or "")
+    if details == "" then
+        details = "No refresh attempt has been recorded yet in this session."
+    end
+    return base .. "\n\nLast refresh result:\n" .. details
 end
 
 
@@ -3660,13 +3688,14 @@ combatMetadataRefreshBtn:SetScript("OnClick", function()
         RefreshCombatMetadataAndUI()
     end
 end)
-AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", "Re-reads combat setting metadata from the current client. Use this if slider ranges look wrong after login, then /reload if needed. Rapid clicks are safely throttled.")
+AttachTooltip(combatMetadataRefreshBtn, "Refresh setting data", BuildCombatMetadataRefreshTooltipBody)
 
 combatMetadataStatusFS = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 combatMetadataStatusFS:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -24)
 combatMetadataStatusFS:SetPoint("RIGHT", combatMetadataRefreshBtn, "LEFT", -8, 0)
 combatMetadataStatusFS:SetJustifyH("LEFT")
 SetCombatMetadataStatus("If any slider range looks incorrect, click Refresh setting data once.")
+SetCombatMetadataRefreshDetails("No refresh attempt has been recorded yet in this session.")
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
 combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -50)
@@ -3933,7 +3962,9 @@ end
 local function AttachTooltip(widget, header, body)
     if not widget then return end
     widget:SetScript("OnEnter", function(self)
-        ShowTooltip(self, "ANCHOR_RIGHT", header, body)
+        local tipHeader = (type(header) == "function") and header() or header
+        local tipBody = (type(body) == "function") and body() or body
+        ShowTooltip(self, "ANCHOR_RIGHT", tipHeader, tipBody)
     end)
     widget:SetScript("OnLeave", HideTooltip)
 end
@@ -5130,16 +5161,26 @@ RefreshCombatMetadataAndUI = function()
     SetCombatMetadataRefreshButtonEnabled(false)
 
     local refreshOk = true
-    local indexOk = pcall(RefreshConsoleCommandIndex)
-    local uiOk = pcall(RefreshCombatTextCVars, true)
-    if not indexOk or not uiOk then
+    local detailLines = {}
+
+    local indexOk, indexErr = pcall(RefreshConsoleCommandIndex)
+    if not indexOk then
         refreshOk = false
+        detailLines[#detailLines + 1] = "Console command index refresh failed: " .. tostring(indexErr)
+    end
+
+    local uiOk, uiErr = pcall(RefreshCombatTextCVars, true)
+    if not uiOk then
+        refreshOk = false
+        detailLines[#detailLines + 1] = "Combat options UI rebuild failed: " .. tostring(uiErr)
     end
 
     if refreshOk then
         SetCombatMetadataStatus("Metadata refreshed for this session.", 0.4, 1.0, 0.4)
+        SetCombatMetadataRefreshDetails("Metadata refreshed successfully for this session.")
     else
         SetCombatMetadataStatus("Refresh failed for one or more settings APIs on this client.", 1.0, 0.3, 0.3)
+        SetCombatMetadataRefreshDetails("Refresh failed for one or more setting APIs on this client.", detailLines)
     end
 
     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
