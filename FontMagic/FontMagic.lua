@@ -800,6 +800,23 @@ end
 local cachedFonts, existsFonts = {}, {}
 local __fmFontCacheId = 0
 local hasCustomFonts = false -- tracks whether any custom font could be loaded
+local customFontStats = { total = 20, available = 0, missing = 20, companionLoaded = false }
+
+local function IsAddOnLoadedCompat(name)
+    if type(name) ~= "string" or name == "" then return false end
+
+    if type(C_AddOns) == "table" and type(C_AddOns.IsAddOnLoaded) == "function" then
+        local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, name)
+        if ok then return loaded and true or false end
+    end
+
+    if type(IsAddOnLoaded) == "function" then
+        local ok, loaded = pcall(IsAddOnLoaded, name)
+        if ok then return loaded and true or false end
+    end
+
+    return false
+end
 
 local function RebuildCustomFontCache()
     local custom = COMBAT_FONT_GROUPS and COMBAT_FONT_GROUPS["Custom"]
@@ -824,6 +841,8 @@ local function RebuildCustomFontCache()
     end
 
     hasCustomFonts = false
+    local totalSlots = #custom.fonts
+    local availableSlots = 0
     for _, fname in ipairs(custom.fonts) do
         local path = custom.path .. fname
         __fmFontCacheId = __fmFontCacheId + 1
@@ -834,10 +853,18 @@ local function RebuildCustomFontCache()
             existsFonts["Custom"][fname] = true
             cachedFonts["Custom"][fname] = { font = f, path = path }
             hasCustomFonts = true
+            availableSlots = availableSlots + 1
         else
             existsFonts["Custom"][fname] = false
         end
     end
+
+    if totalSlots < 0 then totalSlots = 0 end
+    if availableSlots < 0 then availableSlots = 0 end
+    customFontStats.total = totalSlots
+    customFontStats.available = availableSlots
+    customFontStats.missing = math.max(0, totalSlots - availableSlots)
+    customFontStats.companionLoaded = IsAddOnLoadedCompat(CUSTOM_ADDON)
 end
 
 for group, data in pairs(COMBAT_FONT_GROUPS) do
@@ -3283,6 +3310,30 @@ local function GetCustomFontsInstallHint()
     return "Install " .. CUSTOM_ADDON .. ", add .ttf/.otf files in\n" .. prettyPath .. "\nthen /reload."
 end
 
+local function BuildCustomFontsStatusSummary()
+    local loaded = tonumber(customFontStats.available) or 0
+    local total = tonumber(customFontStats.total) or 0
+    local missing = tonumber(customFontStats.missing) or math.max(0, total - loaded)
+
+    if total < 0 then total = 0 end
+    if loaded < 0 then loaded = 0 end
+    if missing < 0 then missing = 0 end
+
+    local companion = customFontStats.companionLoaded and "Loaded" or "Missing"
+    return string.format("Companion addon: %s\nCustom font slots: %d/%d loaded (%d missing)", companion, loaded, total, missing)
+end
+
+local function BuildCustomFontsTooltipDetails()
+    local summary = BuildCustomFontsStatusSummary()
+    if customFontStats.companionLoaded then
+        if hasCustomFonts then
+            return summary .. "\n\nUse files named 1.ttf through 20.ttf (or matching .otf names) in the Custom folder."
+        end
+        return summary .. "\n\nCompanion detected, but no loadable fonts were found yet.\n" .. GetCustomFontsInstallHint()
+    end
+    return summary .. "\n\n" .. GetCustomFontsInstallHint()
+end
+
 local lastDropdown
 for idx, grp in ipairs(order) do
     local dd = CreateFrame("Frame", addonName .. grp:gsub("[^%w]", "") .. "DD", frame, "UIDropDownMenuTemplate")
@@ -3334,9 +3385,7 @@ for idx, grp in ipairs(order) do
 
     if grp == "Custom" then
         dd:SetScript("OnEnter", function(self)
-            if not hasCustomFonts then
-                ShowTooltip(self, "ANCHOR_RIGHT", "Custom fonts are provided by the optional FontMagicCustomFonts addon.", GetCustomFontsInstallHint())
-            end
+            ShowTooltip(self, "ANCHOR_RIGHT", "Custom fonts are provided by the optional FontMagicCustomFonts addon.", BuildCustomFontsTooltipDetails())
         end)
         dd:SetScript("OnLeave", HideTooltip)
     end
@@ -3388,6 +3437,13 @@ for idx, grp in ipairs(order) do
         else
             local groupData = COMBAT_FONT_GROUPS[grp]
             if type(groupData) == "table" and type(groupData.fonts) == "table" then
+                if grp == "Custom" then
+                    buttonIndex = buttonIndex + 1
+                    local summaryInfo = UIDropDownMenu_CreateInfo()
+                    summaryInfo.text = string.format("Loaded %d/%d custom slots", tonumber(customFontStats.available) or 0, tonumber(customFontStats.total) or 0)
+                    summaryInfo.disabled = true
+                    SafeAddDropDownButton(summaryInfo, level)
+                end
                 for _, fname in ipairs(groupData.fonts) do
                 if existsFonts[grp][fname] then
                     added = true
@@ -3421,7 +3477,11 @@ for idx, grp in ipairs(order) do
             if grp == "Favorites" then
                 info.text = "No favorites yet"
             elseif grp == "Custom" and not hasCustomFonts then
-                info.text = "No custom fonts found (install FontMagicCustomFonts)"
+                if customFontStats.companionLoaded then
+                    info.text = "No loadable custom fonts found (expected 1.ttf to 20.ttf)"
+                else
+                    info.text = "No custom fonts found (install FontMagicCustomFonts)"
+                end
             else
                 info.text = "No font detected"
             end
@@ -3430,7 +3490,7 @@ for idx, grp in ipairs(order) do
 
             if grp == "Custom" and not hasCustomFonts then
                 local hint = UIDropDownMenu_CreateInfo()
-                hint.text = GetCustomFontsInstallHint()
+                hint.text = BuildCustomFontsTooltipDetails()
                 hint.disabled = true
                 SafeAddDropDownButton(hint, level)
             end
