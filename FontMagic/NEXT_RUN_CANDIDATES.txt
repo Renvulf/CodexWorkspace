@@ -1,4 +1,4 @@
-1) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
-2) Add a one-click cleanup action (with confirmation) to remove stale favorites detected by /float doctor.
-3) Add keyboard shortcut hint text to the Reset confirmation dialog for Enter/Escape behavior consistency.
-4) Add optional copy-to-editbox UI for "fav export" so users can copy the transfer string without chat-frame selection friction.
+1) Add a one-click cleanup action (with confirmation) to remove stale favorites detected by /float doctor.
+2) Add keyboard shortcut hint text to the Reset confirmation dialog for Enter/Escape behavior consistency.
+3) Add optional copy-to-editbox UI for "fav export" so users can copy the transfer string without chat-frame selection friction.
+4) Add an optional compact diagnostics view toggle in the Combat Options panel for smaller UI scales.

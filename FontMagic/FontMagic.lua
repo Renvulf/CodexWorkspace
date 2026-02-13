@@ -3487,15 +3487,34 @@ local function BuildCustomFontsStatusSummary()
     return string.format("Companion addon: %s\nCustom font slots: %d/%d loaded (%d missing)", companion, loaded, total, missing)
 end
 
+local function BuildCustomFontsFailureHint()
+    if not customFontStats.companionLoaded then
+        return "Install FontMagicCustomFonts first, then place 1.ttf to 20.ttf in its Custom folder."
+    end
+
+    if hasCustomFonts then
+        return "Missing slots are usually empty, misnamed, unsupported, or unreadable/corrupt font files."
+    end
+
+    return "Companion is loaded, but none of 1.ttf to 20.ttf were loadable. Check names, format, and file integrity."
+end
+
+local function BuildCustomDropdownInlineNote()
+    return "Tip: if a slot is missing, check filename, extension, and file health (misnamed/corrupt fonts will not load)."
+end
+
 local function BuildCustomFontsTooltipDetails()
     local summary = BuildCustomFontsStatusSummary()
-    if customFontStats.companionLoaded then
-        if hasCustomFonts then
-            return summary .. "\n\nUse files named 1.ttf through 20.ttf (or matching .otf names) in the Custom folder."
-        end
-        return summary .. "\n\nCompanion detected, but no loadable fonts were found yet.\n" .. GetCustomFontsInstallHint()
+    local installHint = "Use files named 1.ttf through 20.ttf (or matching .otf names) in the Custom folder."
+    if not customFontStats.companionLoaded then
+        return summary .. "\n\n" .. GetCustomFontsInstallHint() .. "\n\n" .. BuildCustomFontsFailureHint()
     end
-    return summary .. "\n\n" .. GetCustomFontsInstallHint()
+
+    if hasCustomFonts then
+        return summary .. "\n\n" .. installHint .. "\n\n" .. BuildCustomFontsFailureHint()
+    end
+
+    return summary .. "\n\nCompanion detected, but no loadable fonts were found yet.\n" .. GetCustomFontsInstallHint() .. "\n\n" .. BuildCustomFontsFailureHint()
 end
 
 local lastDropdown
@@ -3607,6 +3626,12 @@ for idx, grp in ipairs(order) do
                     summaryInfo.text = string.format("Loaded %d/%d custom slots", tonumber(customFontStats.available) or 0, tonumber(customFontStats.total) or 0)
                     summaryInfo.disabled = true
                     SafeAddDropDownButton(summaryInfo, level)
+
+                    buttonIndex = buttonIndex + 1
+                    local customNoteInfo = UIDropDownMenu_CreateInfo()
+                    customNoteInfo.text = BuildCustomDropdownInlineNote()
+                    customNoteInfo.disabled = true
+                    SafeAddDropDownButton(customNoteInfo, level)
                 end
                 for _, fname in ipairs(groupData.fonts) do
                 if existsFonts[grp][fname] then
@@ -3654,7 +3679,7 @@ for idx, grp in ipairs(order) do
 
             if grp == "Custom" and not hasCustomFonts then
                 local hint = UIDropDownMenu_CreateInfo()
-                hint.text = BuildCustomFontsTooltipDetails()
+                hint.text = BuildCustomFontsFailureHint()
                 hint.disabled = true
                 SafeAddDropDownButton(hint, level)
             end
