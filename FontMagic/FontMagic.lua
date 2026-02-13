@@ -1990,12 +1990,62 @@ local function EnsureFavorites()
     return FontMagicDB.favorites
 end
 
+local function AnalyzeFavoritesIntegrity()
+    local result = {
+        total = 0,
+        enabled = 0,
+        invalidKeyType = 0,
+        invalidValueType = 0,
+        stale = 0,
+        canonicalDrift = 0,
+        staleExamples = {},
+        driftExamples = {},
+    }
+
+    local favs = EnsureFavorites()
+    for key, on in pairs(favs) do
+        result.total = result.total + 1
+
+        if on == true then
+            result.enabled = result.enabled + 1
+        elseif on ~= false and on ~= nil then
+            result.invalidValueType = result.invalidValueType + 1
+        end
+
+        if type(key) ~= "string" or key == "" then
+            result.invalidKeyType = result.invalidKeyType + 1
+        else
+            local canon = CanonicalizeFontKey(key)
+            if not canon then
+                result.stale = result.stale + 1
+                if #result.staleExamples < 3 then
+                    table.insert(result.staleExamples, key)
+                end
+            elseif canon ~= key then
+                result.canonicalDrift = result.canonicalDrift + 1
+                if #result.driftExamples < 3 then
+                    table.insert(result.driftExamples, string.format("%s -> %s", key, canon))
+                end
+            end
+        end
+    end
+
+    result.clean = (result.invalidKeyType == 0 and result.invalidValueType == 0 and result.stale == 0 and result.canonicalDrift == 0)
+    return result
+end
+
 local function IsFavorite(key)
+    if type(key) ~= "string" or key == "" then
+        return false
+    end
     local favs = EnsureFavorites()
     return favs[key] == true
 end
 
 local function ToggleFavorite(key)
+    if type(key) ~= "string" or key == "" then
+        return
+    end
     local favs = EnsureFavorites()
     if favs[key] == true then
         favs[key] = nil
@@ -3400,7 +3450,7 @@ for idx, grp in ipairs(order) do
             local favs = EnsureFavorites()
             local favList = {}
             for key, on in pairs(favs) do
-                if on == true then
+                if on == true and type(key) == "string" and key ~= "" then
                     -- Parse using the last '/' so legacy groups with slashes are handled.
                     local g, f = key:match("^(.*)/([^/]+)$")
                     if g and f and existsFonts[g] and existsFonts[g][f] and cachedFonts[g] and cachedFonts[g][f] then
@@ -6049,6 +6099,34 @@ local function PrintCombatSettingsDebugReport()
     end
 end
 
+local function PrintFavoritesIntegrityReport()
+    local report = AnalyzeFavoritesIntegrity()
+    print("|cFF00FF00[FontMagic]|r Favorites integrity check:")
+    print(string.format("|cFF00FF00[FontMagic]|r Total keys: %d | Enabled: %d", report.total, report.enabled))
+
+    if report.clean then
+        print("|cFF00FF00[FontMagic]|r No stale or malformed favorites detected.")
+        return
+    end
+
+    if report.stale > 0 then
+        print(string.format("|cFFFFD200[FontMagic]|r Stale favorites: %d (font no longer available)", report.stale))
+        if #report.staleExamples > 0 then
+            print("|cFFFFD200[FontMagic]|r Examples: " .. table.concat(report.staleExamples, ", "))
+        end
+    end
+    if report.canonicalDrift > 0 then
+        print(string.format("|cFFFFD200[FontMagic]|r Legacy favorite keys: %d (auto-fixed on next migration)", report.canonicalDrift))
+        if #report.driftExamples > 0 then
+            print("|cFFFFD200[FontMagic]|r Examples: " .. table.concat(report.driftExamples, ", "))
+        end
+    end
+    if report.invalidKeyType > 0 or report.invalidValueType > 0 then
+        print(string.format("|cFFFF3333[FontMagic]|r Malformed entries: key type=%d, value type=%d", report.invalidKeyType, report.invalidValueType))
+    end
+    print("|cFF00FF00[FontMagic]|r This check is read-only and never mutates SavedVariables.")
+end
+
 SlashCmdList["FCT"] = function(msg)
     -- normalise message for case-insensitive matching and remove whitespace
     msg = tostring(msg or ""):match("^%s*(.-)%s*$"):lower()
@@ -6082,6 +6160,9 @@ SlashCmdList["FCT"] = function(msg)
         PrintCombatSettingsDebugReport()
         print("|cFF00FF00[FontMagic]|r Layout preset: " .. tostring((FontMagicDB and FontMagicDB.layoutPreset) or FM_LAYOUT_PRESET_DEFAULT))
         return
+    elseif msg == "doctor" or msg == "check" then
+        PrintFavoritesIntegrityReport()
+        return
     elseif msg == "reload" then
         TriggerSafeReload("/float reload")
         return
@@ -6092,8 +6173,9 @@ SlashCmdList["FCT"] = function(msg)
         SetLayoutPresetChoice(FM_LAYOUT_PRESET_DEFAULT)
         return
     elseif msg == "help" then
-        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
+        print("|cFF00FF00[FontMagic]|r Commands: /float, /float hide, /float show, /float status, /float doctor, /float reload, /float radius <" .. FM_MINIMAP_RADIUS_OFFSET_MIN .. " to " .. FM_MINIMAP_RADIUS_OFFSET_MAX .. ">, /float compact, /float default")
         print("|cFF00FF00[FontMagic]|r Tip: use /float radius to move the minimap icon closer to or farther from the minimap edge.")
+        print("|cFF00FF00[FontMagic]|r Diagnostics: /float doctor runs a read-only favorites integrity check.")
         print("|cFF00FF00[FontMagic]|r Layout presets: /float compact or /float default, then click Reload Now in the prompt or run /float reload.")
         return
     end
@@ -6416,6 +6498,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 
         UpdateMainCombatCheckboxes()
         CreateMinimapButton()
+
+        local favoritesReport = AnalyzeFavoritesIntegrity()
+        if not favoritesReport.clean then
+            print("|cFFFFD200[FontMagic]|r Favorites list has stale or malformed entries. Run /float doctor for details.")
+        end
+
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(0.2, UpdateMainCombatCheckboxes)
             C_Timer.After(1.0, UpdateMainCombatCheckboxes)

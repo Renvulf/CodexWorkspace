@@ -1,4 +1,4 @@
-1) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
-2) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
-3) Add an optional import/export string for favorites only (no combat settings) with strict validation.
-4) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
+1) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
+2) Add an optional import/export string for favorites only (no combat settings) with strict validation.
+3) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
+4) Add a one-click cleanup action (with confirmation) to remove stale favorites detected by /float doctor.
