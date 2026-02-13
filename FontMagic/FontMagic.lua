@@ -1705,6 +1705,7 @@ local recentPreviewButtons = {}
 local recentPreviewEntries = {}
 local RECENT_PREVIEW_MAX = 5
 local SyncPreviewToAppliedFont
+local RefreshDropdownSelectionLabels
 local UpdatePendingStateText
 local RefreshPreviewTextFromEditBox
 local BuildCombatOptionsUI
@@ -2038,13 +2039,6 @@ end
 SelectFontKey = function(key)
     if type(key) ~= "string" or key == "" then return end
 
-    -- Prefer updating the dropdown that is currently open (if it's ours), otherwise the group dropdown.
-    local open = _G and _G.UIDROPDOWNMENU_OPEN_MENU
-    local targetDD
-    if open and open.__fmGroup and dropdowns[open.__fmGroup] == open then
-        targetDD = open
-    end
-
     local function ApplySelectionPreviewByKey(selectionKey, opts)
         opts = opts or {}
         local grp, fname = selectionKey:match("^(.*)/([^/]+)$")
@@ -2052,25 +2046,12 @@ SelectFontKey = function(key)
 
         local display = __fmStripFontExt(tostring(fname))
 
-        if opts.clearAllDropDownLabels and type(UIDropDownMenu_SetText) == "function" then
-            for _, d2 in pairs(dropdowns) do
-                pcall(UIDropDownMenu_SetText, d2, "Select Font")
-            end
-        end
-
         if opts.setPending then
             pendingFont = selectionKey
             if UpdatePendingStateText then UpdatePendingStateText() end
         end
 
-        local dd = opts.targetDropDown or dropdowns[grp]
-        if dd and type(UIDropDownMenu_SetText) == "function" then
-            local label = opts.labelText or display
-            pcall(UIDropDownMenu_SetText, dd, label)
-        elseif dd and dd.SetText then
-            local label = opts.labelText or display
-            dd:SetText(label)
-        end
+        if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
 
         local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
         local resolvedPath
@@ -2097,13 +2078,8 @@ SelectFontKey = function(key)
         return true
     end
 
-    local grp, fname = key:match("^(.*)/([^/]+)$")
-    local display = fname and __fmStripFontExt(tostring(fname)) or nil
     ApplySelectionPreviewByKey(key, {
         setPending = true,
-        clearAllDropDownLabels = true,
-        targetDropDown = targetDD,
-        labelText = (targetDD and targetDD.__fmGroup == "Favorites" and display and grp) and (display .. " (" .. grp .. ")") or display,
     })
 end
 
@@ -2193,13 +2169,7 @@ local function AttachFavoriteStar(menuButton)
                 if UpdatePendingStateText then UpdatePendingStateText() end
             end
 
-            if shouldClear and dropdowns and dropdowns["Favorites"] then
-                if type(UIDropDownMenu_SetText) == "function" then
-                    pcall(UIDropDownMenu_SetText, dropdowns["Favorites"], "Select Font")
-                elseif dropdowns["Favorites"].SetText then
-                    dropdowns["Favorites"]:SetText("Select Font")
-                end
-            end
+            if shouldClear and RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
 
             if (removedPending or selectedWasRemoved) and type(SyncPreviewToAppliedFont) == "function" then
                 pcall(SyncPreviewToAppliedFont)
@@ -3171,6 +3141,90 @@ local function DisplayNameForFont(fname)
     local lower = fname:lower()
     local label = FONT_LABEL_OVERRIDES[fname] or FONT_LABEL_OVERRIDES_L[lower] or base
     return __fmShortenFontLabel(label)
+end
+
+local function SplitFontKey(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    return key:match("^(.*)/([^/]+)$")
+end
+
+local function IsKnownFontKey(key)
+    local grp, fname = SplitFontKey(key)
+    if not grp or not fname then return false end
+    if not (existsFonts and existsFonts[grp] and existsFonts[grp][fname]) then
+        return false
+    end
+    if not (cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]) then
+        return false
+    end
+    return true
+end
+
+local function BuildStateBadgeForKey(key)
+    if type(key) ~= "string" or key == "" then return "" end
+    if pendingFont == key then
+        return " |cffffd200[Preview]|r"
+    end
+    if FontMagicDB and FontMagicDB.selectedFont == key then
+        return " |cff72ff72[Applied]|r"
+    end
+    return ""
+end
+
+local function BuildDropdownLabelForKey(key, forFavorites)
+    local grp, fname = SplitFontKey(key)
+    if not grp or not fname then return nil end
+
+    local display = DisplayNameForFont(fname)
+    if display == "" then
+        display = __fmStripFontExt(fname)
+    end
+
+    local label = display
+    if forFavorites then
+        label = string.format("%s (%s)", display, grp)
+    end
+    return label .. BuildStateBadgeForKey(key)
+end
+
+RefreshDropdownSelectionLabels = function()
+    if type(dropdowns) ~= "table" then return end
+
+    for _, dd in pairs(dropdowns) do
+        SetDropdownTextCompat(dd, "Select Font")
+    end
+
+    local appliedKey = FontMagicDB and FontMagicDB.selectedFont
+    if IsKnownFontKey(appliedKey) then
+        local grp = SplitFontKey(appliedKey)
+        local mainLabel = BuildDropdownLabelForKey(appliedKey, false)
+        if grp and mainLabel and dropdowns[grp] then
+            SetDropdownTextCompat(dropdowns[grp], mainLabel)
+        end
+
+        if dropdowns["Favorites"] and IsFavorite(appliedKey) then
+            local favLabel = BuildDropdownLabelForKey(appliedKey, true)
+            if favLabel then
+                SetDropdownTextCompat(dropdowns["Favorites"], favLabel)
+            end
+        end
+    end
+
+    local pendingKey = pendingFont
+    if IsKnownFontKey(pendingKey) then
+        local grp = SplitFontKey(pendingKey)
+        local mainLabel = BuildDropdownLabelForKey(pendingKey, false)
+        if grp and mainLabel and dropdowns[grp] then
+            SetDropdownTextCompat(dropdowns[grp], mainLabel)
+        end
+
+        if dropdowns["Favorites"] and IsFavorite(pendingKey) then
+            local favLabel = BuildDropdownLabelForKey(pendingKey, true)
+            if favLabel then
+                SetDropdownTextCompat(dropdowns["Favorites"], favLabel)
+            end
+        end
+    end
 end
 
 local function GetCustomFontsInstallHint()
@@ -5454,6 +5508,7 @@ applyBtn:SetScript("OnClick", function()
         FontMagicDB.selectedFont = selection
         pendingFont = nil
         if UpdatePendingStateText then UpdatePendingStateText() end
+        if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
 
         local path = ResolveFontPathFromKey(selection)
         if path then
@@ -5594,17 +5649,7 @@ local function ResetFontOnly()
     CaptureBlizzardDefaultFonts()
     local defaultPath = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH or "Fonts\\FRIZQT__.TTF"
 
-    -- Reset dropdown labels
-    for _, group in ipairs(order) do
-        local dd = dropdowns[group]
-        if dd then
-            if type(UIDropDownMenu_SetText) == "function" then
-                pcall(UIDropDownMenu_SetText, dd, "Select Font")
-            elseif dd.SetText then
-                dd:SetText("Select Font")
-            end
-        end
-    end
+    if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
 
     -- Reset preview font (keep the preview text as-is).
     SetPreviewFont(GameFontNormalLarge or (preview and preview.GetFontObject and preview:GetFontObject()), defaultPath)
@@ -5950,19 +5995,12 @@ SlashCmdList["FCT"] = function(msg)
     pendingFont = nil -- discard any un-applied selection
     if UpdatePendingStateText then UpdatePendingStateText() end
 
-    for _, d in pairs(dropdowns) do
-        SetDropdownTextCompat(d, "Select Font")
-    end
+    if RefreshDropdownSelectionLabels then RefreshDropdownSelectionLabels() end
     if FontMagicDB.selectedFont then
         -- parse using the last '/' to support group names that contain
         -- slashes from older categories.
         local grp,fname = FontMagicDB.selectedFont:match("^(.*)/([^/]+)$")
         if grp and fname and dropdowns[grp] and existsFonts[grp] and existsFonts[grp][fname] then
-            SetDropdownTextCompat(dropdowns[grp], __fmStripFontExt(fname))
-            -- If this font is favorited, also reflect it in the Favorites dropdown.
-            if dropdowns["Favorites"] and IsFavorite(FontMagicDB.selectedFont) then
-                SetDropdownTextCompat(dropdowns["Favorites"], __fmStripFontExt(fname))
-            end
             local cache = cachedFonts and cachedFonts[grp] and cachedFonts[grp][fname]
             if cache then
                 SetPreviewFont(cache)
