@@ -1,4 +1,4 @@
-1) Add a compact read-only custom-font availability summary (loaded/missing count) in the Custom category tooltip.
-2) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
-3) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
-4) Add an optional import/export string for favorites only (no combat settings) with strict validation.
+1) Add a lightweight self-check command that validates favorite keys and reports stale entries without mutating data.
+2) Add keyboard-friendly tooltip hints for dropdown focus navigation (Tab/Shift+Tab, Enter) when the window first opens.
+3) Add an optional import/export string for favorites only (no combat settings) with strict validation.
+4) Add a small in-panel note that explains why custom font slots can show as missing when files are misnamed/corrupt.
