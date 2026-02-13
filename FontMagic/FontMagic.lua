@@ -1487,6 +1487,8 @@ end
 
 local dropdownKeyboardOrder = {}
 local activeDropdownNavIndex
+local dropdownKeyboardHintShown = false
+local dropdownKeyboardHintFS
 
 local function SetDropdownTextCompat(dd, text)
     if not dd then return end
@@ -1570,6 +1572,23 @@ local function OpenFocusedDropdownFromKeyboard()
     if not (dd and btn and btn.IsShown and btn:IsShown()) then return end
 
     pcall(ToggleDropDownMenu, 1, nil, dd, btn, 0, 0)
+end
+
+local function UpdateDropdownKeyboardHintVisibility(forceHide)
+    if not dropdownKeyboardHintFS then
+        return
+    end
+
+    if forceHide then
+        dropdownKeyboardHintFS:SetText("")
+        return
+    end
+
+    if dropdownKeyboardHintShown then
+        dropdownKeyboardHintFS:SetText("|cff8f8f8fTip: press Tab / Shift+Tab to change category, then Enter to open.|r")
+    else
+        dropdownKeyboardHintFS:SetText("|cffffd200Keyboard tip: Tab / Shift+Tab moves focus across categories. Press Enter to open the focused dropdown.|r")
+    end
 end
 
 local function ApplyBackdropCompat(target, backdrop, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
@@ -3559,6 +3578,13 @@ end
 
 SetDropdownKeyboardFocus(1)
 
+dropdownKeyboardHintFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+dropdownKeyboardHintFS:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -(HEADER_H + 8))
+dropdownKeyboardHintFS:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+dropdownKeyboardHintFS:SetJustifyH("LEFT")
+dropdownKeyboardHintFS:SetJustifyV("TOP")
+UpdateDropdownKeyboardHintVisibility(false)
+
 -- 5) SCALE SLIDER -----------------------------------------------------------
 local scaleLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 -- Centre the combat text size label beneath the last row of dropdowns.  We
@@ -3881,6 +3907,7 @@ frame:SetScript("OnHide", function()
     pcall(SyncPreviewToAppliedFont)
 
     activeDropdownNavIndex = nil
+    UpdateDropdownKeyboardHintVisibility(true)
     for _, dd in ipairs(dropdownKeyboardOrder) do
         local btn = GetDropdownToggleButton(dd)
         if btn and btn.UnlockHighlight then
@@ -3899,23 +3926,35 @@ frame:SetScript("OnKeyDown", function(self, key)
     if key == "TAB" then
         local step = (IsShiftKeyDown and IsShiftKeyDown()) and -1 or 1
         SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + step)
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     end
 
     if key == "LEFT" then
         SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) - 1)
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     elseif key == "RIGHT" then
         SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + 1)
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     elseif key == "UP" then
         SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) - DD_COLS)
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     elseif key == "DOWN" then
         SetDropdownKeyboardFocus((activeDropdownNavIndex or 1) + DD_COLS)
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     elseif key == "SPACE" or key == "ENTER" then
         OpenFocusedDropdownFromKeyboard()
+        dropdownKeyboardHintShown = true
+        UpdateDropdownKeyboardHintVisibility(false)
         return
     elseif key ~= "ESCAPE" then
         return
@@ -6209,6 +6248,8 @@ SlashCmdList["FCT"] = function(msg)
     end
     preview:SetText(editBox:GetText())
     PrepareFontMagicWindowForDisplay()
+    dropdownKeyboardHintShown = false
+    UpdateDropdownKeyboardHintVisibility(false)
     frame:Show()
 
     -- Ensure the preview is correctly sized the first time the window is shown.
