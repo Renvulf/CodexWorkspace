@@ -377,6 +377,50 @@ local function ResolveCVarName(cvarOrCandidates)
     return n
 end
 
+local function ResolveConsoleSettingTargets(cvarOrCandidates)
+    local out, seen = {}, {}
+
+    local function addResolved(name, commandType)
+        if type(name) ~= "string" or name == "" then return end
+        local key = name .. "#" .. tostring(commandType or "nil")
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = { name = name, commandType = commandType }
+    end
+
+    local function addFrom(candidate)
+        local n, ct = ResolveConsoleSetting(candidate)
+        if n then addResolved(n, ct) end
+    end
+
+    if type(cvarOrCandidates) == "string" then
+        addFrom(cvarOrCandidates)
+        local base = cvarOrCandidates:gsub("_[vV]%d+$", "")
+        if base ~= cvarOrCandidates then
+            addFrom(base)
+        else
+            addFrom(base .. "_v2")
+            addFrom(base .. "_V2")
+            addFrom(base .. "_v3")
+            addFrom(base .. "_V3")
+        end
+    elseif type(cvarOrCandidates) == "table" then
+        for _, candidate in ipairs(cvarOrCandidates) do
+            addFrom(candidate)
+        end
+    end
+
+    return out
+end
+
+local function GetResolvedSettingNumber(candidates, fallback)
+    local n = ResolveCVarName(candidates)
+    if not n then return fallback end
+    local v = tonumber(GetCVarString(n))
+    if v == nil then return fallback end
+    return v
+end
+
 
 SetCVarString = function(cvar, value)
     if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
@@ -487,6 +531,12 @@ if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides
 if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
 if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
+if type(FontMagicDB.floatingTextGravity) ~= "number" then
+    FontMagicDB.floatingTextGravity = GetResolvedSettingNumber({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }, 1.0)
+end
+if type(FontMagicDB.floatingTextFadeDuration) ~= "number" then
+    FontMagicDB.floatingTextFadeDuration = GetResolvedSettingNumber({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }, 1.0)
+end
 
 -- Migration: older versions stored combat overrides per-character. Move them into the account DB.
 do
@@ -763,6 +813,35 @@ local function ApplyCombatTextFontPath(path)
     TrySetFont(_G and _G.DamageTextFont,         25, "OUTLINE")
     TrySetFont(_G and _G.DamageTextFontOutline,  25, "OUTLINE")
 end
+
+local function ApplyFloatingTextMotionSettings()
+    local function clamp(v, lo, hi)
+        if v < lo then return lo end
+        if v > hi then return hi end
+        return v
+    end
+
+    local gravityTargets = ResolveConsoleSettingTargets({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+    local fadeTargets = ResolveConsoleSettingTargets({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+
+    if #gravityTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextGravity) == "number" then
+        local g = clamp(FontMagicDB.floatingTextGravity, 0.00, 2.00)
+        FontMagicDB.floatingTextGravity = g
+        local formatted = string.format("%.2f", g)
+        for _, target in ipairs(gravityTargets) do
+            ApplyConsoleSetting(target.name, target.commandType, formatted)
+        end
+    end
+    if #fadeTargets > 0 and FontMagicDB and type(FontMagicDB.floatingTextFadeDuration) == "number" then
+        local f = clamp(FontMagicDB.floatingTextFadeDuration, 0.10, 3.00)
+        FontMagicDB.floatingTextFadeDuration = f
+        local formatted = string.format("%.2f", f)
+        for _, target in ipairs(fadeTargets) do
+            ApplyConsoleSetting(target.name, target.commandType, formatted)
+        end
+    end
+end
+
 
 local function ApplySavedCombatFont()
     if type(FontMagicDB) ~= "table" then return end
@@ -2956,6 +3035,95 @@ local function AddHeader(textLine, y)
     return y - 18
 end
 
+
+local function AddSectionNote(y, textLine)
+    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetJustifyV("TOP")
+    fs:SetTextColor(0.72, 0.72, 0.72)
+    fs:SetText(textLine)
+    table.insert(combatWidgets, fs)
+    return y - 24
+end
+
+local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply)
+    if enabled == nil then enabled = true end
+    if liveApply == nil then liveApply = true end
+
+    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    fs:SetText(label)
+    if not enabled then
+        fs:SetTextColor(0.5, 0.5, 0.5)
+    end
+    table.insert(combatWidgets, fs)
+
+    local valText = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
+    table.insert(combatWidgets, valText)
+
+    local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
+    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
+    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 30)
+    s:SetMinMaxValues(minVal, maxVal)
+    s:SetValueStep(step)
+    s:SetObeyStepOnDrag(false)
+
+    local low = _G[s:GetName() .. "Low"]
+    local high = _G[s:GetName() .. "High"]
+    if low then
+        low:SetText(string.format("%.2f", minVal))
+        low:ClearAllPoints()
+        low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
+    end
+    if high then
+        high:SetText(string.format("%.2f", maxVal))
+        high:ClearAllPoints()
+        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", -8, -2)
+    end
+    local t = s.Text or _G[s:GetName() .. "Text"]
+    if t and t.Hide then t:Hide() end
+
+    local function setVal(v)
+        local rounded = math.floor((v / step) + 0.5) * step
+        rounded = math.max(minVal, math.min(maxVal, rounded))
+        valText:SetText(string.format("%.2f", rounded))
+        return rounded
+    end
+
+    s:SetScript("OnValueChanged", function(_, v)
+        if not enabled then return end
+        local rounded = setVal(v)
+        if liveApply then
+            onChange(rounded)
+        end
+    end)
+
+    s:EnableMouse(true)
+    s:SetScript("OnMouseUp", function(self)
+        if not enabled then return end
+        local rounded = setVal(self:GetValue())
+        self:SetValue(rounded)
+        onChange(rounded)
+    end)
+
+    s:SetValue(value)
+    setVal(value)
+
+    if enabled then
+        s:Enable()
+        if tip then AttachTooltip(s, label, tip) end
+    else
+        s:Disable()
+        if tip then AttachTooltip(s, label, tip .. "\n\n" .. (disabledHint or "Not available on this client.")) end
+    end
+
+    table.insert(combatWidgets, s)
+    return s
+end
+
 local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
     local x = (col == 0) and 0 or (CB_COL_W + CHECK_COL_GAP)
     local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
@@ -3062,7 +3230,7 @@ local function BuildCombatOptionsUI()
         y = y - 26
     end
 
-    y = AddHeader("Common", y - 2)
+    y = AddHeader("Combat text visibility", y - 2)
     row = 0
 
     for _, def in ipairs(COMBAT_BOOL_DEFS) do
@@ -3093,7 +3261,7 @@ local function BuildCombatOptionsUI()
     y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
 
     if EnsureIncomingReady() then
-        y = AddHeader("Incoming", y)
+        y = AddHeader("Incoming message filters", y)
 
         local dmgEnabled = (type(COMBAT_TEXT_TYPE_INFO) == "table") and
             (COMBAT_TEXT_TYPE_INFO.DAMAGE ~= nil or COMBAT_TEXT_TYPE_INFO.SPELL_DAMAGE ~= nil)
@@ -3132,6 +3300,56 @@ local function BuildCombatOptionsUI()
 
         y = y - CHECK_ROW_H - 10
     end
+
+    y = AddHeader("Floating text motion", y)
+    y = AddSectionNote(y, "Tune movement behavior for world-space floating numbers. Changes apply immediately when supported.")
+    local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
+    local fadeName = ResolveCVarName({ "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" })
+    local gravitySupported = (gravityName ~= nil)
+    local fadeSupported = (fadeName ~= nil)
+
+    if not gravitySupported or not fadeSupported then
+        local unavailable = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        unavailable:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+        if not gravitySupported and not fadeSupported then
+            unavailable:SetText("These motion controls are unavailable in this game client.")
+        elseif not gravitySupported then
+            unavailable:SetText("Gravity is unavailable in this game client.")
+        else
+            unavailable:SetText("Fade timing is unavailable in this game client.")
+        end
+        unavailable:SetTextColor(0.7, 0.7, 0.7)
+        table.insert(combatWidgets, unavailable)
+        y = y - 20
+    end
+
+    CreateOptionSlider(y, "Gravity", "Motion gravity", 0.00, 2.00, 0.05,
+        tonumber(FontMagicDB and FontMagicDB.floatingTextGravity) or 1.0,
+        function(v)
+            FontMagicDB = FontMagicDB or {}
+            FontMagicDB.floatingTextGravity = v
+            ApplyFloatingTextMotionSettings()
+        end,
+        "Controls arc intensity while world-space numbers move upward and settle.",
+        gravitySupported,
+        nil,
+        false
+    )
+
+    CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
+        tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
+        function(v)
+            FontMagicDB = FontMagicDB or {}
+            FontMagicDB.floatingTextFadeDuration = v
+            ApplyFloatingTextMotionSettings()
+        end,
+        "Controls how long world-space numbers remain visible before fading.",
+        fadeSupported,
+        nil,
+        false
+    )
+
+    y = y - 120
 
     local extras = CollectExtraBoolCombatTextCVars()
     if #extras > 0 then
@@ -3490,6 +3708,40 @@ local function ResetCombatOptionsOnly()
         end
     end
 
+    do
+        local function ResetNumericCVarToDefault(candidates)
+            local name, ct = ResolveConsoleSetting(candidates)
+            if not name then return nil end
+
+            if type(C_CVar) == "table" and type(C_CVar.ResetCVar) == "function" and ct == 0 then
+                pcall(C_CVar.ResetCVar, name)
+            else
+                local d
+                if type(C_CVar) == "table" and type(C_CVar.GetCVarDefault) == "function" then
+                    local ok, v = pcall(C_CVar.GetCVarDefault, name)
+                    if ok then d = v end
+                end
+                if d == nil and type(GetCVarDefault) == "function" then
+                    local ok, v = pcall(GetCVarDefault, name)
+                    if ok then d = v end
+                end
+                if d ~= nil then
+                    ApplyConsoleSetting(name, ct, d)
+                end
+            end
+            return tonumber(GetCVarString(name))
+        end
+
+        local gravityCandidates = { "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }
+        local fadeCandidates = { "WorldTextRampDuration_v2", "WorldTextRampDuration_V2", "WorldTextRampDuration", "floatingCombatTextRampDuration_v2", "floatingCombatTextRampDuration_V2", "floatingCombatTextRampDuration" }
+
+        local g = ResetNumericCVarToDefault(gravityCandidates)
+        local f = ResetNumericCVarToDefault(fadeCandidates)
+
+        FontMagicDB.floatingTextGravity = g or GetResolvedSettingNumber(gravityCandidates, 1.0)
+        FontMagicDB.floatingTextFadeDuration = f or GetResolvedSettingNumber(fadeCandidates, 1.0)
+    end
+
     -- Restore Blizzard's default incoming damage/healing tables (where supported).
     if EnsureIncomingReady() and type(COMBAT_TEXT_TYPE_INFO) == "table" and type(originalInfo) == "table" then
         local keys = {
@@ -3840,6 +4092,7 @@ end
 local function ApplyAllSavedOverrides()
     ApplyCombatOverrides()
     ApplyIncomingOverrides()
+    ApplyFloatingTextMotionSettings()
 
     -- If combat text was hidden via the master toggle, keep it hidden across relogs.
     if FontMagicDB and FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
@@ -3884,6 +4137,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             MigrateSavedFontKeys()
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
+            ApplyFloatingTextMotionSettings()
         end
 
         -- If Blizzard_CombatText loads after us, re-apply incoming overrides (if any).
@@ -3892,6 +4146,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
             ApplyIncomingOverrides()
+            ApplyFloatingTextMotionSettings()
             RefreshCombatTextCVars()
         end
 
