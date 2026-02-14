@@ -531,6 +531,7 @@ if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides
 if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
 if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
+if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
 if type(FontMagicDB.floatingTextGravity) ~= "number" then
     FontMagicDB.floatingTextGravity = GetResolvedSettingNumber({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }, 1.0)
 end
@@ -1038,6 +1039,7 @@ local dropdowns = {}
 local preview
 local editBox
 local mainShowCombatTextCB
+local mainShowSelfCombatTextCB
 local previewHeaderFS
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
@@ -2282,11 +2284,11 @@ local incomingInit = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
-expandBtn:SetSize(260, 24)
+expandBtn:SetSize(170, 24)
 expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 44)
 
 local function UpdateExpandToggleText()
-    local txt = isExpanded and "Hide Combat Text Options <" or "Show Combat Text Options >"
+    local txt = "Combat text options"
     if expandBtn and expandBtn.SetText then
         expandBtn:SetText(txt)
     end
@@ -2304,7 +2306,8 @@ expandBtn:SetFrameLevel((frame:GetFrameLevel() or 0) + 50)
 expandBtn:SetScript("OnEnter", function(self)
     if GameTooltip then
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(isExpanded and "Combat Text Options <" or "Combat Text Options >", 1, 1, 1, 1, true)
+        GameTooltip:SetText("Combat text options", 1, 1, 1, 1, true)
+        GameTooltip:AddLine(isExpanded and "Click to hide advanced combat text controls." or "Click to show advanced combat text controls.", nil, nil, nil, true)
         GameTooltip:Show()
     end
 end)
@@ -2679,6 +2682,63 @@ local function ApplyIncomingOverrides()
     end
 end
 
+local SELF_COMBAT_TEXT_SETTING_CANDIDATES = {
+    { "floatingCombatTextDodgeParryMiss", "floatingCombatTextDodgeParryMiss_v2", "floatingCombatTextDodgeParryMiss_V2" },
+    { "floatingCombatTextDamageReduction", "floatingCombatTextDamageReduction_v2", "floatingCombatTextDamageReduction_V2" },
+    { "floatingCombatTextFriendlyHealers", "floatingCombatTextFriendlyHealers_v2", "floatingCombatTextFriendlyHealers_V2" },
+    { "floatingCombatTextCombatHealingAbsorbSelf", "floatingCombatTextCombatHealingAbsorbSelf_v2", "floatingCombatTextCombatHealingAbsorbSelf_V2" },
+}
+
+local function SetSelfCombatTextCVar(name, enabled)
+    if type(name) ~= "string" or name == "" then return false end
+    if not DoesCVarExist(name) then return false end
+
+    local value = enabled and "1" or "0"
+
+    if type(SetCVar) == "function" then
+        local ok = pcall(SetCVar, name, value)
+        if ok then return true end
+    end
+
+    if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
+        local ok = pcall(C_CVar.SetCVar, name, value)
+        if ok then return true end
+    end
+
+    return false
+end
+
+local function ApplySelfCombatTextEnabled(enabled)
+    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
+        for _, cvar in ipairs(candidates) do
+            if SetSelfCombatTextCVar(cvar, enabled and true or false) then
+                break
+            end
+        end
+    end
+
+    if EnsureIncomingReady() then
+        SetIncomingDamageEnabled(enabled and true or false)
+        SetIncomingHealingEnabled(enabled and true or false)
+    end
+end
+
+local function IsSelfCombatTextSupported()
+    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
+        for _, cvar in ipairs(candidates) do
+            if DoesCVarExist(cvar) then
+                return true
+            end
+        end
+    end
+
+    if EnsureIncomingReady() then
+        return true
+    end
+
+    return false
+end
+
 local function ApplyCombatOverrides()
     if type(FontMagicDB) == "table" and type(FontMagicDB.combatOverrides) == "table" then
         for key, val in pairs(FontMagicDB.combatOverrides) do
@@ -2989,6 +3049,9 @@ local function SetCombatTextMasterEnabled(wantEnabled)
         end
         FontMagicDB.combatMasterSnapshot = nil
         FontMagicDB.combatMasterOffByFontMagic = nil
+
+        if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
+        ApplySelfCombatTextEnabled(FontMagicDB.showSelfCombatText and true or false)
     else
         if not (FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table") then
             CaptureCombatTextMasterSnapshot()
@@ -2998,15 +3061,31 @@ local function SetCombatTextMasterEnabled(wantEnabled)
 end
 
 local function UpdateMainCombatCheckboxes()
+    local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
+
     if mainShowCombatTextCB and mainShowCombatTextCB.SetChecked then
         if not IsCombatTextMasterSupported() then
             if mainShowCombatTextCB.Disable then pcall(mainShowCombatTextCB.Disable, mainShowCombatTextCB) end
             -- If we can't control it on this client, default to showing it as enabled so the
             -- checkbox doesn't look "wrong" on first load.
-            mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
+            mainShowCombatTextCB:SetChecked(masterEnabled)
         else
             if mainShowCombatTextCB.Enable then pcall(mainShowCombatTextCB.Enable, mainShowCombatTextCB) end
-            mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
+            mainShowCombatTextCB:SetChecked(masterEnabled)
+        end
+    end
+
+    if mainShowSelfCombatTextCB and mainShowSelfCombatTextCB.SetChecked then
+        FontMagicDB = FontMagicDB or {}
+        if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
+        mainShowSelfCombatTextCB:SetChecked(FontMagicDB.showSelfCombatText and true or false)
+
+        if (not masterEnabled) or (not IsSelfCombatTextSupported()) then
+            if mainShowSelfCombatTextCB.Disable then pcall(mainShowSelfCombatTextCB.Disable, mainShowSelfCombatTextCB) end
+            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 0.5, 0.5, 0.5)
+        else
+            if mainShowSelfCombatTextCB.Enable then pcall(mainShowSelfCombatTextCB.Enable, mainShowSelfCombatTextCB) end
+            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 1, 0.82, 0)
         end
     end
 end
@@ -3460,20 +3539,47 @@ mainShowCombatTextCB = CreateCheckbox(frame, "Show Combat Text", 0, 0, true,
         local want = self:GetChecked() and true or false
         SetCombatTextMasterEnabled(want)
         RefreshCombatTextCVars()
+        UpdateMainCombatCheckboxes()
     end
 )
 mainShowCombatTextCB:ClearAllPoints()
--- Keep this quick toggle above the action buttons and away from the expandable panel toggle.
-mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 44)
+mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 66)
 do
     local fs = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
-    if fs and fs.SetWidth then fs:SetWidth(240) end
+    if fs and fs.SetWidth then fs:SetWidth(160) end
     if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
     if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
 end
 AttachTooltip(mainShowCombatTextCB, "Show Combat Text",
     "Shows or hides Blizzard floating combat text without losing your per-type settings.\n\n" ..
     "When you hide it, FontMagic stores your current combat text settings and restores them when you enable it again.")
+
+mainShowSelfCombatTextCB = CreateCheckbox(frame, "Self", 0, 0, true,
+    function(self)
+        FontMagicDB = FontMagicDB or {}
+        local enabled = self:GetChecked() and true or false
+        FontMagicDB.showSelfCombatText = enabled
+
+        local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
+        if masterEnabled then
+            ApplySelfCombatTextEnabled(enabled)
+        else
+            ApplySelfCombatTextEnabled(false)
+        end
+
+        UpdateMainCombatCheckboxes()
+    end
+)
+mainShowSelfCombatTextCB:ClearAllPoints()
+mainShowSelfCombatTextCB:SetPoint("LEFT", mainShowCombatTextCB, "RIGHT", 28, 0)
+do
+    local fs = mainShowSelfCombatTextCB and (mainShowSelfCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowSelfCombatTextCB))
+    if fs and fs.SetWidth then fs:SetWidth(70) end
+    if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
+    if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
+end
+AttachTooltip(mainShowSelfCombatTextCB, "Self",
+    "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
 
 applyBtn:SetScript("OnClick", function()
     -- use the pending selection if the user picked a font but hasn't applied yet
@@ -3642,6 +3748,7 @@ local function ResetCombatOptionsOnly()
     FontMagicDB.incomingOverrides = {}
     FontMagicDB.combatMasterSnapshot = nil
     FontMagicDB.combatMasterOffByFontMagic = nil
+    FontMagicDB.showSelfCombatText = true
 
     local function ResetBoolCVarToDefault(name)
         if not name then return end
@@ -4094,9 +4201,15 @@ local function ApplyAllSavedOverrides()
     ApplyIncomingOverrides()
     ApplyFloatingTextMotionSettings()
 
+    FontMagicDB = FontMagicDB or {}
+    if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
+
     -- If combat text was hidden via the master toggle, keep it hidden across relogs.
-    if FontMagicDB and FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
+    if FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
         ApplyCombatTextMasterDisabled()
+        ApplySelfCombatTextEnabled(false)
+    else
+        ApplySelfCombatTextEnabled(FontMagicDB.showSelfCombatText and true or false)
     end
 end
 
