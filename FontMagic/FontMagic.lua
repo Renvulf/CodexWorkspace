@@ -2682,51 +2682,12 @@ local function ApplyIncomingOverrides()
     end
 end
 
-local SELF_COMBAT_TEXT_DEF_KEYS = {
-    "dodgeParryMiss",
-    "damageReduction",
-    "friendlyHealers",
-    "combatHealingAbsorbSelf",
-}
-
-local SELF_COMBAT_TEXT_SETTING_FALLBACK_CANDIDATES = {
+local SELF_COMBAT_TEXT_SETTING_CANDIDATES = {
     { "floatingCombatTextDodgeParryMiss", "floatingCombatTextDodgeParryMiss_v2", "floatingCombatTextDodgeParryMiss_V2" },
     { "floatingCombatTextDamageReduction", "floatingCombatTextDamageReduction_v2", "floatingCombatTextDamageReduction_V2" },
     { "floatingCombatTextFriendlyHealers", "floatingCombatTextFriendlyHealers_v2", "floatingCombatTextFriendlyHealers_V2" },
     { "floatingCombatTextCombatHealingAbsorbSelf", "floatingCombatTextCombatHealingAbsorbSelf_v2", "floatingCombatTextCombatHealingAbsorbSelf_V2" },
 }
-
-local function CollectSelfCombatTextSettingTargets()
-    local targets, seen = {}, {}
-
-    local function addTarget(name, commandType)
-        if type(name) ~= "string" or name == "" then return end
-        local key = name .. "#" .. tostring(commandType or "nil")
-        if seen[key] then return end
-        seen[key] = true
-        targets[#targets + 1] = { name = name, ct = commandType }
-    end
-
-    for _, key in ipairs(SELF_COMBAT_TEXT_DEF_KEYS) do
-        local def = DEF_BY_KEY and DEF_BY_KEY[key]
-        if def and type(def.candidates) == "table" then
-            local n, ct = ResolveConsoleSetting(def.candidates)
-            if n then
-                addTarget(n, ct)
-            end
-        end
-    end
-
-    -- Fallback for clients where DEF_BY_KEY entries are unavailable/renamed.
-    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_FALLBACK_CANDIDATES) do
-        local n, ct = ResolveConsoleSetting(candidates)
-        if n then
-            addTarget(n, ct)
-        end
-    end
-
-    return targets
-end
 
 local function SetSelfCombatTextCVar(name, enabled)
     if type(name) ~= "string" or name == "" then return false end
@@ -2747,78 +2708,11 @@ local function SetSelfCombatTextCVar(name, enabled)
     return false
 end
 
-local function GetSelfCombatTextStateFromResolvedTargets()
-    local sawValue = false
-    local firstValue
-    for _, entry in ipairs(CollectSelfCombatTextSettingTargets()) do
-        if entry and entry.ct == 0 and entry.name then
-            local v = GetLiveBoolCVar(entry.name)
-            if v ~= nil then
-                local b = v and true or false
-                if not sawValue then
-                    firstValue = b
-                    sawValue = true
-                elseif firstValue ~= b then
-                    -- Mixed states mean the client exposes these as separate toggles.
-                    -- In that case, defer to the incoming-info path (or DB fallback).
-                    return nil
-                end
-            end
-        end
-    end
-    if sawValue then
-        return firstValue and true or false
-    end
-    return nil
-end
-
-local function GetSelfCombatTextStateFromIncomingInfo()
-    if not EnsureIncomingReady() or type(COMBAT_TEXT_TYPE_INFO) ~= "table" then
-        return nil
-    end
-    local dmgEnabled = (COMBAT_TEXT_TYPE_INFO.DAMAGE ~= nil or COMBAT_TEXT_TYPE_INFO.SPELL_DAMAGE ~= nil)
-    local healEnabled = (COMBAT_TEXT_TYPE_INFO.HEAL ~= nil or COMBAT_TEXT_TYPE_INFO.PERIODIC_HEAL ~= nil)
-    return (dmgEnabled or healEnabled) and true or false
-end
-
-local function GetSelfCombatTextEnabled()
-    -- Primary: same resolved combat-text settings used by the addon's combat options/reset paths.
-    local fromTargets = GetSelfCombatTextStateFromResolvedTargets()
-    if fromTargets ~= nil then
-        return fromTargets
-    end
-
-    -- Fallback: incoming message table path used by the advanced incoming filters.
-    local fromIncoming = GetSelfCombatTextStateFromIncomingInfo()
-    if fromIncoming ~= nil then
-        return fromIncoming
-    end
-
-    FontMagicDB = FontMagicDB or {}
-    if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
-    return FontMagicDB.showSelfCombatText and true or false
-end
-
 local function ApplySelfCombatTextEnabled(enabled)
-    local appliedAny = false
-    local value = enabled and "1" or "0"
-
-    -- Primary: drive the same resolved settings that the combat options/reset logic manages.
-    for _, entry in ipairs(CollectSelfCombatTextSettingTargets()) do
-        if entry and entry.name then
-            ApplyConsoleSetting(entry.name, entry.ct, value)
-            appliedAny = true
-        end
-    end
-
-    -- Fallback: direct CVar APIs for older clients where command resolution may not find entries.
-    if not appliedAny then
-        for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_FALLBACK_CANDIDATES) do
-            for _, cvar in ipairs(candidates) do
-                if SetSelfCombatTextCVar(cvar, enabled and true or false) then
-                    appliedAny = true
-                    break
-                end
+    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
+        for _, cvar in ipairs(candidates) do
+            if SetSelfCombatTextCVar(cvar, enabled and true or false) then
+                break
             end
         end
     end
@@ -2826,18 +2720,11 @@ local function ApplySelfCombatTextEnabled(enabled)
     if EnsureIncomingReady() then
         SetIncomingDamageEnabled(enabled and true or false)
         SetIncomingHealingEnabled(enabled and true or false)
-        appliedAny = true
     end
-
-    return appliedAny
 end
 
 local function IsSelfCombatTextSupported()
-    if #CollectSelfCombatTextSettingTargets() > 0 then
-        return true
-    end
-
-    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_FALLBACK_CANDIDATES) do
+    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
         for _, cvar in ipairs(candidates) do
             if DoesCVarExist(cvar) then
                 return true
@@ -3173,25 +3060,8 @@ local function SetCombatTextMasterEnabled(wantEnabled)
     end
 end
 
-local function UpdateSelfCombatTooltip(masterEnabled, selfSupported)
-    if not mainShowSelfCombatTextCB then return end
-
-    local title = "Scrolling combat text for self"
-    local body
-    if not selfSupported then
-        body = "Not available on this client."
-    elseif not masterEnabled then
-        body = "Requires \"Show Combat Text\" to be enabled."
-    else
-        body = "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character)."
-    end
-
-    AttachTooltip(mainShowSelfCombatTextCB, title, body)
-end
-
 local function UpdateMainCombatCheckboxes()
     local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
-    local selfSupported = IsSelfCombatTextSupported() and true or false
 
     if mainShowCombatTextCB and mainShowCombatTextCB.SetChecked then
         if not IsCombatTextMasterSupported() then
@@ -3208,34 +3078,21 @@ local function UpdateMainCombatCheckboxes()
     if mainShowSelfCombatTextCB and mainShowSelfCombatTextCB.SetChecked then
         FontMagicDB = FontMagicDB or {}
         if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
+        mainShowSelfCombatTextCB:SetChecked(FontMagicDB.showSelfCombatText and true or false)
 
-        local checkedState
-        if masterEnabled then
-            checkedState = GetSelfCombatTextEnabled()
-            FontMagicDB.showSelfCombatText = checkedState and true or false
-        else
-            checkedState = FontMagicDB.showSelfCombatText and true or false
-        end
-        mainShowSelfCombatTextCB:SetChecked(checkedState)
-
-        if (not masterEnabled) or (not selfSupported) then
+        if (not masterEnabled) or (not IsSelfCombatTextSupported()) then
             if mainShowSelfCombatTextCB.Disable then pcall(mainShowSelfCombatTextCB.Disable, mainShowSelfCombatTextCB) end
             SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 0.5, 0.5, 0.5)
+            local tip = (not masterEnabled)
+                and "Requires \"Show Combat Text\" to be enabled."
+                or "Not available on this client."
+            AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self", tip)
         else
             if mainShowSelfCombatTextCB.Enable then pcall(mainShowSelfCombatTextCB.Enable, mainShowSelfCombatTextCB) end
-
-            local r, g, b = 1, 0.82, 0
-            local showText = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
-            if showText and showText.GetTextColor then
-                local sr, sg, sb = showText:GetTextColor()
-                if sr and sg and sb then
-                    r, g, b = sr, sg, sb
-                end
-            end
-            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, r, g, b)
+            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 1, 0.82, 0)
+            AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self",
+                "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
         end
-
-        UpdateSelfCombatTooltip(masterEnabled, selfSupported)
     end
 end
 
@@ -4447,12 +4304,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             ApplyIncomingOverrides()
             ApplyFloatingTextMotionSettings()
             RefreshCombatTextCVars()
-            UpdateMainCombatCheckboxes()
         end
 
     elseif event == "CVAR_UPDATE" then
         -- Keep UI in sync if the user changes settings via the default Options UI.
         RefreshCombatTextCVars()
-        UpdateMainCombatCheckboxes()
     end
 end)
