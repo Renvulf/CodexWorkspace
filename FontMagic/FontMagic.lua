@@ -896,6 +896,8 @@ local CONTENT_NUDGE_Y = 8
 local CHECK_ROW_H     = 28
 local COMBAT_CONTENT_W = PREVIEW_W - 10
 local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 18
+local COMBAT_SECTION_GAP = 10
+local COMBAT_CHECKBOX_TEXT_W = COMBAT_CONTENT_W - 32
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -909,6 +911,12 @@ local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 18
 local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
 local COLLAPSED_W = INNER_W + PAD * 2
 local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
+local ACTION_LEFT_X = LEFT_PANEL_X
+local ACTION_RIGHT_X = LEFT_PANEL_X
+local ACTION_ROW_Y = 16
+local ACTION_TOGGLE_Y = 82
+local ACTION_DIVIDER_Y = 112
+local ACTION_BUTTON_GAP = 10
 frame.__fmCollapsedW = COLLAPSED_W
 frame:SetSize(COLLAPSED_W, 520 + PAD * 2)
 frame:SetPoint("CENTER")
@@ -1023,26 +1031,43 @@ local function SetCheckButtonLabelColor(cb, r, g, b)
     end
 end
 
-local function CreateCheckbox(parent, label, x, y, checked, onClick)
-    _cbId = _cbId + 1
-    local cb = CreateFrame("CheckButton", addonName .. "CB" .. _cbId, parent, "UICheckButtonTemplate")
-    cb:SetSize(26, 26)
-    cb:SetPoint("TOPLEFT", x, y)
+local function SetCheckButtonEnabled(cb, enabled)
+    if not cb then return end
+    if enabled then
+        if cb.Enable then pcall(cb.Enable, cb) end
+        SetCheckButtonLabelColor(cb, 0.95, 0.95, 0.95)
+    else
+        if cb.Disable then pcall(cb.Disable, cb) end
+        SetCheckButtonLabelColor(cb, 0.55, 0.55, 0.55)
+    end
+end
+
+local function ConfigureCheckbox(cb, label, x, y, checked, onClick)
+    if not cb then return nil end
+    cb:ClearAllPoints()
+    cb:SetPoint("TOPLEFT", x or 0, y or 0)
     SetCheckButtonLabel(cb, label)
 
-    -- Tighten label spacing: keep the text directly to the right of the checkbox on all clients.
+    -- Keep label alignment consistent across retail/classic checkbox templates.
     do
         local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
         if fs and fs.ClearAllPoints and fs.SetPoint then
             fs:ClearAllPoints()
-            fs:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+            fs:SetPoint("LEFT", cb, "RIGHT", 3, 0)
             if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
             cb.__fmLabelFS = fs
         end
     end
 
     cb:SetChecked(checked and true or false)
-    if onClick then cb:SetScript("OnClick", onClick) end
+    cb:SetScript("OnClick", onClick)
+    return cb
+end
+
+local function CreateCheckbox(parent, label, x, y, checked, onClick)
+    _cbId = _cbId + 1
+    local cb = CreateFrame("CheckButton", addonName .. "CB" .. _cbId, parent, "UICheckButtonTemplate")
+    ConfigureCheckbox(cb, label, x, y, checked, onClick)
     return cb
 end
 
@@ -2145,9 +2170,11 @@ local function RefreshScaleControl()
     if scaleSupported then
         slider:SetMinMaxValues(0.5, 5.0)
         slider:SetValueStep(0.1)
-        slider:SetObeyStepOnDrag(true)
-        _G[slider:GetName() .. "Low"]:SetText("0.5")
-        _G[slider:GetName() .. "High"]:SetText("5.0")
+        if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+        local low = _G[slider:GetName() .. "Low"]
+        local high = _G[slider:GetName() .. "High"]
+        if low then low:SetText("0.5") end
+        if high then high:SetText("5.0") end
         slider:Enable()
         scaleLabel:SetTextColor(1, 1, 1)
         local currentScale = tonumber(scaleCVarValue)
@@ -2163,8 +2190,10 @@ local function RefreshScaleControl()
     else
         slider:Disable()
         scaleLabel:SetTextColor(0.5, 0.5, 0.5)
-        _G[slider:GetName() .. "Low"]:SetText("")
-        _G[slider:GetName() .. "High"]:SetText("")
+        local low = _G[slider:GetName() .. "Low"]
+        local high = _G[slider:GetName() .. "High"]
+        if low then low:SetText("") end
+        if high then high:SetText("") end
         scaleValue:SetText("|cff888888N/A|r")
         slider:SetScript("OnValueChanged", nil)
         slider:SetScript("OnEnter", function(self)
@@ -2233,7 +2262,7 @@ editBox:SetText("12345")
 editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()) end)
 
 local actionDivider = frame:CreateTexture(nil, "BORDER")
-actionDivider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 112)
+actionDivider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", ACTION_LEFT_X, ACTION_DIVIDER_Y)
 actionDivider:SetWidth(PREVIEW_W)
 actionDivider:SetHeight(1)
 actionDivider:SetColorTexture(1, 1, 1, 0.12)
@@ -2298,7 +2327,7 @@ local incomingInit = false
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
 expandBtn:SetSize(PREVIEW_W, 24)
-expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 44)
+expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -ACTION_RIGHT_X, ACTION_ROW_Y + 28)
 
 local function UpdateExpandToggleText()
     local txt = isExpanded and "Hide Combat Text Options <" or "Show Combat Text Options >"
@@ -3021,12 +3050,12 @@ end
 local function UpdateMainCombatCheckboxes()
     if mainShowCombatTextCB and mainShowCombatTextCB.SetChecked then
         if not IsCombatTextMasterSupported() then
-            if mainShowCombatTextCB.Disable then pcall(mainShowCombatTextCB.Disable, mainShowCombatTextCB) end
+            SetCheckButtonEnabled(mainShowCombatTextCB, false)
             -- If we can't control it on this client, default to showing it as enabled so the
             -- checkbox doesn't look "wrong" on first load.
             mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
         else
-            if mainShowCombatTextCB.Enable then pcall(mainShowCombatTextCB.Enable, mainShowCombatTextCB) end
+            SetCheckButtonEnabled(mainShowCombatTextCB, true)
             mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
         end
     end
@@ -3038,13 +3067,29 @@ end
 
 local combatWidgets = {}
 local combatSliderPool = {}
+local combatCheckboxPool = {}
+local combatCheckboxPoolIndex = 0
 
 local function ClearCombatWidgets()
+    combatCheckboxPoolIndex = 0
     for _, w in ipairs(combatWidgets) do
         if w and w.Hide then w:Hide() end
         if w and w.SetParent then w:SetParent(nil) end
     end
     combatWidgets = {}
+end
+
+local function AcquireCombatCheckbox()
+    combatCheckboxPoolIndex = combatCheckboxPoolIndex + 1
+    local cb = combatCheckboxPool[combatCheckboxPoolIndex]
+    if not cb then
+        cb = CreateFrame("CheckButton", addonName .. "CombatOptionCB" .. combatCheckboxPoolIndex, combatContent, "UICheckButtonTemplate")
+        combatCheckboxPool[combatCheckboxPoolIndex] = cb
+    else
+        cb:SetParent(combatContent)
+        cb:Show()
+    end
+    return cb
 end
 
 local function AddHeader(textLine, y)
@@ -3068,6 +3113,16 @@ local function AddSectionNote(y, textLine)
     fs:SetText(textLine)
     table.insert(combatWidgets, fs)
     return y - 24
+end
+
+local function AddSectionDivider(y)
+    local line = combatContent:CreateTexture(nil, "BORDER")
+    line:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+    line:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
+    line:SetHeight(1)
+    line:SetColorTexture(1, 1, 1, 0.10)
+    table.insert(combatWidgets, line)
+    return y - COMBAT_SECTION_GAP
 end
 
 local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, onChange, tip, enabled, disabledHint, liveApply)
@@ -3101,7 +3156,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     s:SetWidth(COMBAT_SLIDER_W)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
-    s:SetObeyStepOnDrag(false)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(false) end
     s:SetScript("OnValueChanged", nil)
     s:SetScript("OnMouseUp", nil)
     s:SetScript("OnEnter", nil)
@@ -3160,11 +3215,11 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     return s
 end
 
-local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
-    local x = 0
-    local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
-    cb:ClearAllPoints()
-    cb:SetPoint("TOPLEFT", combatContent, "TOPLEFT", x, y)
+local function CreateOptionCheckbox(y, label, checked, onClick, tip)
+    local cb = AcquireCombatCheckbox()
+    cb:SetScript("OnEnter", nil)
+    cb:SetScript("OnLeave", nil)
+    ConfigureCheckbox(cb, label, 0, y, checked, onClick)
 
     -- Keep the list single-column and readable on all clients/scales.
     local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
@@ -3172,10 +3227,11 @@ local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
         if fs.SetFontObject and type(GameFontHighlightSmall) ~= "nil" then
             pcall(fs.SetFontObject, fs, GameFontHighlightSmall)
         end
-        if fs.SetWidth then fs:SetWidth(COMBAT_CONTENT_W - 30) end
+        if fs.SetWidth then fs:SetWidth(COMBAT_CHECKBOX_TEXT_W) end
         if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
         if fs.SetWordWrap then fs:SetWordWrap(false) end
     end
+    SetCheckButtonEnabled(cb, true)
 
     if tip then AttachTooltip(cb, label, tip) end
     table.insert(combatWidgets, cb)
@@ -3280,19 +3336,20 @@ local function BuildCombatOptionsUI()
                 end
 
                 local yy = place()
-                local cb = CreateOptionCheckbox(0, yy, def.label, checked, function(self)
+                local cb = CreateOptionCheckbox(yy, def.label, checked, function(self)
                     local newVal = self:GetChecked() and true or false
                     if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides = {} end
                     FontMagicDB.combatOverrides[def.key] = newVal
                     ApplyConsoleSetting(n, ct, newVal and "1" or "0")
                 end, def.tip)
 
-                if masterOff and cb and cb.Disable then pcall(cb.Disable, cb) end
+                SetCheckButtonEnabled(cb, not masterOff)
             end
         end
     end
 
     y = y - (row * CHECK_ROW_H) - 10
+    y = AddSectionDivider(y)
 
     if EnsureIncomingReady() then
         y = AddHeader("Incoming message filters", y)
@@ -3313,26 +3370,25 @@ local function BuildCombatOptionsUI()
             if snap.incoming.heal ~= nil then showHeal = snap.incoming.heal and true or false end
         end
 
-        local cb1 = CreateOptionCheckbox(0, y, "Show Incoming Damage", showDmg, function(self)
+        local cb1 = CreateOptionCheckbox(y, "Show Incoming Damage", showDmg, function(self)
             local newVal = self:GetChecked() and true or false
             if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
             FontMagicDB.incomingOverrides.incomingDamage = newVal
             SetIncomingDamageEnabled(newVal)
         end, "Shows or hides scrolling combat text for damage you take.\n\n(Only available on clients that load Blizzard_CombatText.)")
 
-        local cb2 = CreateOptionCheckbox(0, y - CHECK_ROW_H, "Show Incoming Healing", showHeal, function(self)
+        local cb2 = CreateOptionCheckbox(y - CHECK_ROW_H, "Show Incoming Healing", showHeal, function(self)
             local newVal = self:GetChecked() and true or false
             if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
             FontMagicDB.incomingOverrides.incomingHealing = newVal
             SetIncomingHealingEnabled(newVal)
         end, "Shows or hides scrolling combat text for healing you receive.\n\n(Only available on clients that load Blizzard_CombatText.)")
 
-        if masterOff then
-            if cb1 and cb1.Disable then pcall(cb1.Disable, cb1) end
-            if cb2 and cb2.Disable then pcall(cb2.Disable, cb2) end
-        end
+        SetCheckButtonEnabled(cb1, not masterOff)
+        SetCheckButtonEnabled(cb2, not masterOff)
 
         y = y - (CHECK_ROW_H * 2) - 10
+        y = AddSectionDivider(y)
     end
 
     y = AddHeader("Floating text motion", y)
@@ -3384,19 +3440,20 @@ local function BuildCombatOptionsUI()
     )
 
     y = y - 120
+    y = AddSectionDivider(y)
 
     local extras = CollectExtraBoolCombatTextCVars()
     if #extras > 0 then
         local showExtras = (FontMagicDB and FontMagicDB.showExtraCombatToggles) and true or false
 
         -- Keep the panel tidy by default. Users can opt in to showing extra/experimental toggles.
-        local toggle = CreateOptionCheckbox(0, y, "Show extra combat text toggles", showExtras, function(self)
+        local toggle = CreateOptionCheckbox(y, "Show extra combat text toggles", showExtras, function(self)
             FontMagicDB = FontMagicDB or {}
             FontMagicDB.showExtraCombatToggles = self:GetChecked() and true or false
             BuildCombatOptionsUI()
         end, "Reveals additional, less common combat text options detected on this client.\n\nThese vary by WoW version and may do nothing in some clients. If you\'re unsure, leave this off.")
 
-        if masterOff and toggle and toggle.Disable then pcall(toggle.Disable, toggle) end
+        SetCheckButtonEnabled(toggle, not masterOff)
 
         y = y - CHECK_ROW_H - 6
 
@@ -3416,25 +3473,27 @@ local function BuildCombatOptionsUI()
 
                     local yy = place()
                     local tip = GetExtraCombatTextCVarTooltip(cvar)
-                    local cb = CreateOptionCheckbox(0, yy, PrettyCVarLabel(cvar), checked, function(self)
+                    local cb = CreateOptionCheckbox(yy, PrettyCVarLabel(cvar), checked, function(self)
                         local newVal = self:GetChecked() and true or false
                         if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
                         FontMagicDB.extraCombatOverrides[cvar] = newVal
                         ApplyConsoleSetting(n, ct, newVal and "1" or "0")
                     end, tip)
 
-                    if masterOff and cb and cb.Disable then pcall(cb.Disable, cb) end
+                    SetCheckButtonEnabled(cb, not masterOff)
                 end
             end
 
             y = y - (row * CHECK_ROW_H) - 10
         end
+
+        y = AddSectionDivider(y)
     end
 
 -- UI / layering helpers
     y = AddHeader("UI (Advanced)", y)
     local above = (FontMagicDB and FontMagicDB.combatTextAboveNameplates) and true or false
-    CreateOptionCheckbox(0, y, "Combat text in front of nameplates", above, function(self)
+    CreateOptionCheckbox(y, "Combat text in front of nameplates", above, function(self)
         FontMagicDB = FontMagicDB or {}
         local v = self:GetChecked() and true or false
         FontMagicDB.combatTextAboveNameplates = v
@@ -3475,7 +3534,7 @@ end)
 -- 8) APPLY & DEFAULT BUTTONS ----------------------------------------------- -----------------------------------------------
 local applyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 applyBtn:SetSize(110, 24)
-applyBtn:SetPoint("BOTTOMLEFT", 16, 16)
+applyBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", ACTION_LEFT_X, ACTION_ROW_Y)
 applyBtn:SetText("Apply")
 
 
@@ -3493,10 +3552,10 @@ mainShowCombatTextCB = CreateCheckbox(frame, "Show Combat Text", 0, 0, true,
 )
 mainShowCombatTextCB:ClearAllPoints()
 -- Keep this quick toggle above the action buttons and away from the expandable panel toggle.
-mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 82)
+mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", ACTION_LEFT_X, ACTION_TOGGLE_Y)
 do
     local fs = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
-    if fs and fs.SetWidth then fs:SetWidth(240) end
+    if fs and fs.SetWidth then fs:SetWidth(PREVIEW_W - 34) end
     if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
     if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
 end
@@ -3545,7 +3604,7 @@ end)
 
 local defaultBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 defaultBtn:SetSize(110, 24)
-defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", 10, 0)
+defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", ACTION_BUTTON_GAP, 0)
 defaultBtn:SetText("Reset")
 
 AttachTooltip(defaultBtn, "Reset", "Restore Blizzard defaults. Choose what to reset.")
@@ -3844,14 +3903,14 @@ end)
 
 -- 11) CLOSE BUTTON
 local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-closeBtn:SetSize(90, 24)
+closeBtn:SetSize(110, 24)
 -- Align with the Apply button and use the reduced
 -- bottom spacing
-closeBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 16)
+closeBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -ACTION_RIGHT_X, ACTION_ROW_Y)
 -- Keep the expand toggle neatly above Close
 if expandBtn and expandBtn.ClearAllPoints and expandBtn.SetPoint then
     expandBtn:ClearAllPoints()
-    expandBtn:SetPoint("BOTTOMRIGHT", closeBtn, "TOPRIGHT", 0, 6)
+    expandBtn:SetPoint("BOTTOMRIGHT", closeBtn, "TOPRIGHT", 0, 8)
 end
 closeBtn:SetText("Close")
 closeBtn:SetScript("OnClick", function() frame:Hide() end)
