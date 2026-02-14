@@ -879,23 +879,23 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 --
 -- Constants control the visual spacing and border width so adjustments can
 -- be made in a single location.
-local PAD       = 20   -- distance from the outer edge to the nearest widget
+local PAD       = 24   -- distance from the outer edge to the nearest widget
 local BORDER    = 12   -- thickness of the decorative border
-local HEADER_H  = 44   -- reserved vertical space above the first dropdown row
+local HEADER_H  = 56   -- reserved vertical space above the first dropdown row
 local PREVIEW_W = 320  -- width of preview and edit boxes
 local DD_COL_W  = 200  -- width allocated for each dropdown column
 
 -- Dropdown layout (shared by the window and menu builders)
 local DD_COLS      = 2    -- number of dropdowns per row
-local DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
+local DD_MARGIN_X  = 16   -- left/right inner margin for dropdown columns
 local DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
-local DROPDOWN_ROW_H = 50 -- vertical spacing between dropdown rows
+local DROPDOWN_ROW_H = 48 -- vertical spacing between dropdown rows
 
 -- Shared spacing for the combat options panel
 local CONTENT_NUDGE_Y = 8
 local CHECK_ROW_H     = 28
-local COMBAT_CONTENT_W = PREVIEW_W - 10
-local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 18
+local COMBAT_CONTENT_W = PREVIEW_W - 16
+local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 16
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -905,7 +905,7 @@ local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 18
 -- dropdowns from touching or overlapping the right border when the
 -- window is scaled.
 -- Compute the window width from the dropdown grid so the columns are
--- perfectly padded on both sides when using 3 dropdowns per row.
+-- perfectly padded on both sides.
 local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
 local COLLAPSED_W = INNER_W + PAD * 2
 local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
@@ -923,7 +923,7 @@ frame:SetBackdrop({
 -- Darker, more opaque background so text stays readable even over bright scenes.
 frame:SetBackdropColor(0, 0, 0, 0.92)
 if frame.SetBackdropBorderColor then
-    frame:SetBackdropBorderColor(0.70, 0.70, 0.70, 0.90)
+    frame:SetBackdropBorderColor(0.62, 0.62, 0.62, 0.85)
 end
 frame:EnableMouse(true)
 frame:SetMovable(true)
@@ -941,6 +941,32 @@ frame:SetScript("OnDragStop", function(self)
 end)
 frame:Hide()
 frame.name = "FontMagic"
+
+do
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -16)
+    title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -LEFT_PANEL_X, -16)
+    title:SetJustifyH("LEFT")
+    title:SetText("Font Selection")
+    if title.SetTextColor then
+        title:SetTextColor(0.94, 0.94, 0.94)
+    end
+
+    local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+    subtitle:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -4)
+    subtitle:SetJustifyH("LEFT")
+    subtitle:SetText("Choose a typeface, preview it, then apply.")
+    if subtitle.SetTextColor then
+        subtitle:SetTextColor(0.70, 0.70, 0.70)
+    end
+
+    local titleDivider = frame:CreateTexture(nil, "BORDER")
+    titleDivider:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -48)
+    titleDivider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -LEFT_PANEL_X, -48)
+    titleDivider:SetHeight(1)
+    titleDivider:SetColorTexture(1, 1, 1, 0.10)
+end
 
 -- Anchor frame used to keep the left-side controls (Apply/Reset/Close/Expand) fixed
 -- when the window expands to show the optional Combat Options panel.
@@ -1014,7 +1040,7 @@ local function CreateCheckbox(parent, label, x, y, checked, onClick)
         local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
         if fs and fs.ClearAllPoints and fs.SetPoint then
             fs:ClearAllPoints()
-            fs:SetPoint("LEFT", cb, "RIGHT", 3, 0)
+            fs:SetPoint("LEFT", cb, "RIGHT", 4, 0)
             if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
             cb.__fmLabelFS = fs
         end
@@ -1884,13 +1910,7 @@ for idx, grp in ipairs(order) do
         x = DD_MARGIN_X + (DD_COL_W / 2)
     end
 
--- place dropdowns below the InterfaceOptions title text
-    -- shift dropdowns slightly so left and right margins are even
-    -- Position each dropdown in its own column.  We reduce the default
-    -- horizontal margin from 16px to 12px so that the combined width of the
-    -- two dropdowns, the spacing between them and the left/right margins add
-    -- up symmetrically across the options window.  Without this adjustment
-    -- the rightmost dropdown sits flush against the frame border.
+    -- Position each dropdown in its own column and keep equal side gutters.
     dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row * DROPDOWN_ROW_H))
     UIDropDownMenu_SetWidth(dd, DD_WIDTH)
     dropdowns[grp] = dd
@@ -1901,10 +1921,10 @@ for idx, grp in ipairs(order) do
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     -- Left-align labels with the dropdown text for faster scanning.
     label:ClearAllPoints()
-    label:SetPoint("BOTTOMLEFT", dd, "TOPLEFT", 16, 2)
+    label:SetPoint("BOTTOMLEFT", dd, "TOPLEFT", 16, 4)
     label:SetWidth(DD_WIDTH + 10)
     label:SetJustifyH("LEFT")
-    if label.SetTextColor then label:SetTextColor(0.82, 0.82, 0.82) end
+    if label.SetTextColor then label:SetTextColor(0.76, 0.76, 0.76) end
     label:SetText(grp)
 
     if grp == "Custom" then
@@ -2027,14 +2047,14 @@ end
 -- 5) SCALE SLIDER -----------------------------------------------------------
 local scaleLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 -- Centre the combat text size label beneath the last row of dropdowns.  We
--- calculate how many rows of dropdowns exist (three columns per row) and
+-- calculate how many rows of dropdowns exist (two columns per row) and
 -- position the label relative to the top of the frame so it always sits
 -- centred horizontally regardless of whether the last dropdown falls in the
 -- left or right column.  The vertical offset accounts for the header
 -- height, the number of dropdown rows and additional padding.
 do
     local rows = math.ceil(#order / DD_COLS)
-    local y = -(HEADER_H + rows * DROPDOWN_ROW_H) - 10 + CONTENT_NUDGE_Y
+    local y = -(HEADER_H + rows * DROPDOWN_ROW_H) - 12 + CONTENT_NUDGE_Y
     scaleLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, y)
 end
 scaleLabel:SetWidth(PREVIEW_W)
@@ -2104,11 +2124,11 @@ scaleValue:SetJustifyH("CENTER")
 
 -- Put the numeric value on its own line between the label and the slider so it
 -- can never overlap the label text (the overlap shown in your screenshot).
-scaleValue:SetPoint("TOP", scaleLabel, "BOTTOM", 0, -6)
+scaleValue:SetPoint("TOP", scaleLabel, "BOTTOM", 0, -8)
 
 -- Now that the value label exists, anchor the slider beneath it.
 slider:ClearAllPoints()
-slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -10)
+slider:SetPoint("TOP", scaleValue, "BOTTOM", 0, -12)
 
 local function UpdateScale(val)
     if not scaleSupported then return end
@@ -2168,7 +2188,7 @@ local PREVIEW_BOX_H = 84
 local previewBox = CreateFrame("Frame", addonName .. "PreviewBox", frame, backdropTemplate)
 previewBox:SetSize(PREVIEW_W, PREVIEW_BOX_H)
 previewBox:ClearAllPoints()
-previewBox:SetPoint("TOP", slider, "BOTTOM", 0, -30)
+previewBox:SetPoint("TOP", slider, "BOTTOM", 0, -24)
 previewBox:SetBackdrop({
     bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -2182,10 +2202,13 @@ previewBox:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
 
 -- Font name label above the preview box (renders using the selected font)
 previewHeaderFS = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-previewHeaderFS:SetPoint("BOTTOM", previewBox, "TOP", 0, 6)
+previewHeaderFS:SetPoint("BOTTOM", previewBox, "TOP", 0, 8)
 previewHeaderFS:SetWidth(PREVIEW_W - 10)
 previewHeaderFS:SetJustifyH("CENTER")
 previewHeaderFS:SetText("Default")
+if previewHeaderFS.SetTextColor then
+    previewHeaderFS:SetTextColor(0.90, 0.90, 0.90)
+end
 
 -- Ensure no preview text bleeds outside the box on any client
 if previewBox.SetClipsChildren then pcall(previewBox.SetClipsChildren, previewBox, true) end
@@ -2210,7 +2233,7 @@ if UpdatePreviewHeaderText then UpdatePreviewHeaderText("Default", DEFAULT_FONT_
 editBox = CreateFrame("EditBox", addonName .. "PreviewEdit", frame, "InputBoxTemplate")
 editBox:SetSize(PREVIEW_W, 24)
 editBox:ClearAllPoints()
-editBox:SetPoint("TOP", previewBox, "BOTTOM", 0, -8)
+editBox:SetPoint("TOP", previewBox, "BOTTOM", 0, -12)
 editBox:SetAutoFocus(false)
 editBox:SetText("12345")
 editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()) end)
@@ -2219,7 +2242,7 @@ local actionDivider = frame:CreateTexture(nil, "BORDER")
 actionDivider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 112)
 actionDivider:SetWidth(PREVIEW_W)
 actionDivider:SetHeight(1)
-actionDivider:SetColorTexture(1, 1, 1, 0.12)
+actionDivider:SetColorTexture(1, 1, 1, 0.10)
 
 -- Discard un-applied font previews whenever the window closes.
 -- This ensures that reopening the addon always reflects the *currently applied*
@@ -2274,14 +2297,14 @@ end)
 
 -- Right-side expandable panel
 local isExpanded = false
-local RIGHT_PANEL_W = PREVIEW_W + 26
+local RIGHT_PANEL_W = PREVIEW_W + 24
 local PANEL_GAP = 16
 local incomingInit = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
 expandBtn:SetSize(PREVIEW_W, 24)
-expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -LEFT_PANEL_X, 44)
+expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -LEFT_PANEL_X, 48)
 
 local function UpdateExpandToggleText()
     local txt = isExpanded and "Hide Combat Text Options <" or "Show Combat Text Options >"
@@ -2322,6 +2345,9 @@ combatPanel:SetBackdrop({
 })
 -- Darker/less translucent so the list remains readable over bright scenes.
 combatPanel:SetBackdropColor(0, 0, 0, 0.92)
+if combatPanel.SetBackdropBorderColor then
+    combatPanel:SetBackdropBorderColor(0.62, 0.62, 0.62, 0.85)
+end
 combatPanel:SetFrameStrata("HIGH")
 combatPanel:SetFrameLevel((frame:GetFrameLevel() or 0) + 40)
 combatPanel:Hide()
@@ -2331,34 +2357,37 @@ local combatPopShadow = frame:CreateTexture(nil, "BACKGROUND")
 combatPopShadow:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", -PANEL_GAP, 0)
 combatPopShadow:SetPoint("BOTTOMLEFT", combatPanel, "BOTTOMLEFT", -PANEL_GAP, 0)
 combatPopShadow:SetWidth(PANEL_GAP)
-combatPopShadow:SetColorTexture(0, 0, 0, 0.25)
+combatPopShadow:SetColorTexture(0, 0, 0, 0.18)
 combatPopShadow:Hide()
 
 local combatDivider = combatPanel:CreateTexture(nil, "ARTWORK")
 combatDivider:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 0, 0)
 combatDivider:SetPoint("BOTTOMLEFT", combatPanel, "BOTTOMLEFT", 0, 0)
 combatDivider:SetWidth(1)
-combatDivider:SetColorTexture(1, 1, 1, 0.12)
+combatDivider:SetColorTexture(1, 1, 1, 0.10)
 
 
 local combatTitle = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-combatTitle:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -8)
+combatTitle:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 12, -12)
 combatTitle:SetText("Combat Text Options")
+if combatTitle.SetTextColor then
+    combatTitle:SetTextColor(0.94, 0.94, 0.94)
+end
 
 local combatTitleLine = combatPanel:CreateTexture(nil, "BORDER")
-combatTitleLine:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -30)
-combatTitleLine:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -10, -30)
+combatTitleLine:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 12, -36)
+combatTitleLine:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -12, -36)
 combatTitleLine:SetHeight(1)
-combatTitleLine:SetColorTexture(1, 1, 1, 0.12)
+combatTitleLine:SetColorTexture(1, 1, 1, 0.10)
 
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
-combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -34)
-combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -26, 10)
+combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 12, -42)
+combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -28, 12)
 
 local combatContent = CreateFrame("Frame", nil, combatScroll)
 combatContent:SetPoint("TOPLEFT", 0, 0)
-combatContent:SetSize(PREVIEW_W, 1)
+combatContent:SetSize(COMBAT_CONTENT_W, 1)
 combatScroll:SetScrollChild(combatContent)
 
 combatScroll:EnableMouseWheel(true)
@@ -3031,23 +3060,34 @@ local function ClearCombatWidgets()
 end
 
 local function AddHeader(textLine, y)
-    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
-    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, 0)
+    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -12, 0)
     fs:SetJustifyH("LEFT")
     fs:SetText(textLine)
+    if fs.SetTextColor then
+        fs:SetTextColor(0.92, 0.92, 0.92)
+    end
     table.insert(combatWidgets, fs)
-    return y - 18
+
+    local rule = combatContent:CreateTexture(nil, "BORDER")
+    rule:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -4)
+    rule:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -12, -4)
+    rule:SetHeight(1)
+    rule:SetColorTexture(1, 1, 1, 0.08)
+    table.insert(combatWidgets, rule)
+
+    return y - 24
 end
 
 
 local function AddSectionNote(y, textLine)
     local fs = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
-    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, 0)
+    fs:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -12, 0)
     fs:SetJustifyH("LEFT")
     fs:SetJustifyV("TOP")
-    fs:SetTextColor(0.72, 0.72, 0.72)
+    fs:SetTextColor(0.68, 0.68, 0.68)
     fs:SetText(textLine)
     table.insert(combatWidgets, fs)
     return y - 24
@@ -3066,7 +3106,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     table.insert(combatWidgets, fs)
 
     local valText = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
+    valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -12, y)
     table.insert(combatWidgets, valText)
 
     -- Reuse slider frames by key so UI rebuilds never attempt to recreate the same
@@ -3080,7 +3120,7 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
         s:Show()
     end
     s:ClearAllPoints()
-    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
+    s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -8)
     s:SetWidth(COMBAT_SLIDER_W)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
@@ -3095,12 +3135,12 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     if low then
         low:SetText(string.format("%.2f", minVal))
         low:ClearAllPoints()
-        low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
+        low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -4)
     end
     if high then
         high:SetText(string.format("%.2f", maxVal))
         high:ClearAllPoints()
-        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", -8, -2)
+        high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -4)
     end
     local t = s.Text or _G[s:GetName() .. "Text"]
     if t and t.Hide then t:Hide() end
@@ -3144,10 +3184,9 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
 end
 
 local function CreateOptionCheckbox(y, label, checked, onClick, tip)
-    local x = 0
     local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
     cb:ClearAllPoints()
-    cb:SetPoint("TOPLEFT", combatContent, "TOPLEFT", x, y)
+    cb:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
 
     -- Keep the list single-column and readable on all clients/scales.
     local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
@@ -3236,7 +3275,7 @@ local function BuildCombatOptionsUI()
     local snap = masterOff and FontMagicDB and FontMagicDB.combatMasterSnapshot or nil
 
     if masterOff then
-        y = AddHeader("Note", y - 2)
+        y = AddHeader("Note", y - 4)
         local note = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         note:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
         note:SetWidth(COMBAT_CONTENT_W)
@@ -3244,10 +3283,10 @@ local function BuildCombatOptionsUI()
         note:SetJustifyV("TOP")
         note:SetText("Combat text is currently hidden by the main \"Show combat text\" toggle. Enable it in the main panel to edit these options.")
         table.insert(combatWidgets, note)
-        y = y - 26
+        y = y - 28
     end
 
-    y = AddHeader("Combat text visibility", y - 2)
+    y = AddHeader("Combat text visibility", y - 4)
     row = 0
 
     for _, def in ipairs(COMBAT_BOOL_DEFS) do
@@ -3275,7 +3314,7 @@ local function BuildCombatOptionsUI()
         end
     end
 
-    y = y - (row * CHECK_ROW_H) - 10
+    y = y - (row * CHECK_ROW_H) - 12
 
     if EnsureIncomingReady() then
         y = AddHeader("Incoming message filters", y)
@@ -3315,7 +3354,7 @@ local function BuildCombatOptionsUI()
             if cb2 and cb2.Disable then pcall(cb2.Disable, cb2) end
         end
 
-        y = y - (CHECK_ROW_H * 2) - 10
+        y = y - (CHECK_ROW_H * 2) - 12
     end
 
     y = AddHeader("Floating text motion", y)
@@ -3337,7 +3376,7 @@ local function BuildCombatOptionsUI()
         end
         unavailable:SetTextColor(0.7, 0.7, 0.7)
         table.insert(combatWidgets, unavailable)
-        y = y - 20
+        y = y - 24
     end
 
     CreateOptionSlider(y, "Gravity", "Motion gravity", 0.00, 2.00, 0.05,
@@ -3353,7 +3392,7 @@ local function BuildCombatOptionsUI()
         false
     )
 
-    CreateOptionSlider(y - 54, "Fade", "Fade duration", 0.10, 3.00, 0.05,
+    CreateOptionSlider(y - 60, "Fade", "Fade duration", 0.10, 3.00, 0.05,
         tonumber(FontMagicDB and FontMagicDB.floatingTextFadeDuration) or 1.0,
         function(v)
             FontMagicDB = FontMagicDB or {}
@@ -3366,7 +3405,7 @@ local function BuildCombatOptionsUI()
         false
     )
 
-    y = y - 120
+    y = y - 128
 
     local extras = CollectExtraBoolCombatTextCVars()
     if #extras > 0 then
@@ -3381,7 +3420,7 @@ local function BuildCombatOptionsUI()
 
         if masterOff and toggle and toggle.Disable then pcall(toggle.Disable, toggle) end
 
-        y = y - CHECK_ROW_H - 6
+        y = y - CHECK_ROW_H - 8
 
         if showExtras then
             y = AddHeader("Other (Advanced)", y)
@@ -3410,7 +3449,7 @@ local function BuildCombatOptionsUI()
                 end
             end
 
-            y = y - (row * CHECK_ROW_H) - 10
+            y = y - (row * CHECK_ROW_H) - 12
         end
     end
 
@@ -3424,9 +3463,9 @@ local function BuildCombatOptionsUI()
         ApplyCombatTextAboveNameplates(v)
     end, "Makes Blizzard floating combat text draw in front of nameplates by raising its frame strata/level.\n\nBest-effort: works best with third-party nameplate add-ons. This only changes draw order (layering), not where the text appears. On many clients it also affects Blizzard nameplates, but some versions/UI setups may show little or no change. Some UI/add-ons may still cover it.")
 
-    y = y - CHECK_ROW_H - 6
+    y = y - CHECK_ROW_H - 8
 
-    local needed = -y + 20
+    local needed = -y + 24
     combatContent:SetHeight(math.max(needed, combatScroll:GetHeight()))
 end
 
@@ -3457,7 +3496,7 @@ end)
 
 -- 8) APPLY & DEFAULT BUTTONS ----------------------------------------------- -----------------------------------------------
 local applyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-applyBtn:SetSize(110, 24)
+applyBtn:SetSize(112, 24)
 applyBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 16)
 applyBtn:SetText("Apply")
 
@@ -3476,7 +3515,7 @@ mainShowCombatTextCB = CreateCheckbox(frame, "Show Combat Text", 0, 0, true,
 )
 mainShowCombatTextCB:ClearAllPoints()
 -- Keep this quick toggle above the action buttons and away from the expandable panel toggle.
-mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 82)
+mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 80)
 do
     local fs = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
     if fs and fs.SetWidth then fs:SetWidth(PREVIEW_W - 34) end
@@ -3527,8 +3566,8 @@ applyBtn:SetScript("OnClick", function()
 end)
 
 local defaultBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-defaultBtn:SetSize(110, 24)
-defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", 10, 0)
+defaultBtn:SetSize(112, 24)
+defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", 12, 0)
 defaultBtn:SetText("Reset")
 
 AttachTooltip(defaultBtn, "Reset", "Restore Blizzard defaults. Choose what to reset.")
@@ -3541,14 +3580,14 @@ resetDialog:SetSize(420, 220)
 resetDialog:SetPoint("CENTER")
 resetDialog:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 }
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 }
 })
 -- More opaque so the dialog remains readable when something bright is behind it.
 resetDialog:SetBackdropColor(0, 0, 0, 0.95)
 if resetDialog.SetBackdropBorderColor then
-    resetDialog:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+    resetDialog:SetBackdropBorderColor(0.62, 0.62, 0.62, 0.90)
 end
 resetDialog:EnableMouse(true)
 resetDialog:SetMovable(true)
@@ -3577,14 +3616,14 @@ end
 
 
 local resetTitle = resetDialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-resetTitle:SetPoint("TOP", 0, -18)
+resetTitle:SetPoint("TOP", 0, -16)
 resetTitle:SetText("Reset FontMagic")
 
 local resetBody = resetDialog:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-resetBody:SetPoint("TOPLEFT", 18, -52)
-resetBody:SetPoint("TOPRIGHT", -18, -52)
-resetBody:SetPoint("BOTTOMLEFT", 18, 128)
-resetBody:SetPoint("BOTTOMRIGHT", -18, 128)
+resetBody:SetPoint("TOPLEFT", 16, -48)
+resetBody:SetPoint("TOPRIGHT", -16, -48)
+resetBody:SetPoint("BOTTOMLEFT", 16, 128)
+resetBody:SetPoint("BOTTOMRIGHT", -16, 128)
 resetBody:SetJustifyH("LEFT")
 resetBody:SetJustifyV("TOP")
 resetBody:SetText("Choose what you want to reset.\n\n• Font only: clears your selected font and preview state.\n• Combat options only: removes FontMagic overrides so WoW settings behave normally.\n• Everything: does both.")
@@ -3782,7 +3821,7 @@ end
 
 local resetFontBtn = CreateFrame("Button", nil, resetDialog, "UIPanelButtonTemplate")
 resetFontBtn:SetSize(160, 22)
-resetFontBtn:SetPoint("BOTTOMLEFT", 18, 54)
+resetFontBtn:SetPoint("BOTTOMLEFT", 16, 56)
 resetFontBtn:SetText("Reset Font Only")
 AttachTooltip(resetFontBtn, "Reset font only", "Restore Blizzard\'s default combat text font.")
 resetFontBtn:SetScript("OnClick", function()
@@ -3792,7 +3831,7 @@ end)
 
 local resetCombatBtn = CreateFrame("Button", nil, resetDialog, "UIPanelButtonTemplate")
 resetCombatBtn:SetSize(160, 22)
-resetCombatBtn:SetPoint("BOTTOMRIGHT", -18, 54)
+resetCombatBtn:SetPoint("BOTTOMRIGHT", -16, 56)
 resetCombatBtn:SetText("Reset Combat Options")
 AttachTooltip(resetCombatBtn, "Reset combat options", "Clear FontMagic combat text overrides and restore Blizzard defaults.")
 resetCombatBtn:SetScript("OnClick", function()
@@ -3802,7 +3841,7 @@ end)
 
 local resetAllBtn = CreateFrame("Button", nil, resetDialog, "UIPanelButtonTemplate")
 resetAllBtn:SetSize(160, 22)
-resetAllBtn:SetPoint("BOTTOM", 0, 92)
+resetAllBtn:SetPoint("BOTTOM", 0, 96)
 resetAllBtn:SetText("Reset Everything")
 AttachTooltip(resetAllBtn, "Reset everything", "Restore Blizzard defaults for both fonts and combat text options.")
 resetAllBtn:SetScript("OnClick", function()
@@ -3812,7 +3851,7 @@ end)
 
 local resetCancelBtn = CreateFrame("Button", nil, resetDialog, "UIPanelButtonTemplate")
 resetCancelBtn:SetSize(120, 22)
-resetCancelBtn:SetPoint("BOTTOM", 0, 18)
+resetCancelBtn:SetPoint("BOTTOM", 0, 16)
 resetCancelBtn:SetText(CANCEL or "Cancel")
 AttachTooltip(resetCancelBtn, "Cancel", "Close this dialog without making changes.")
 resetCancelBtn:SetScript("OnClick", function() resetDialog:Hide() end)
@@ -3827,7 +3866,7 @@ end)
 
 -- 11) CLOSE BUTTON
 local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-closeBtn:SetSize(110, 24)
+closeBtn:SetSize(112, 24)
 -- Align with the Apply button and use the reduced
 -- bottom spacing
 closeBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -LEFT_PANEL_X, 16)
