@@ -881,7 +881,7 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 -- be made in a single location.
 local PAD       = 20   -- distance from the outer edge to the nearest widget
 local BORDER    = 12   -- thickness of the decorative border
-local HEADER_H  = 76   -- reserved vertical space for the in-frame title block
+local HEADER_H  = 44   -- reserved vertical space above the first dropdown row
 local PREVIEW_W = 320  -- width of preview and edit boxes
 local DD_COL_W  = 200  -- width allocated for each dropdown column
 
@@ -910,7 +910,7 @@ local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
 local COLLAPSED_W = INNER_W + PAD * 2
 local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
 frame.__fmCollapsedW = COLLAPSED_W
-frame:SetSize(COLLAPSED_W, 544 + PAD * 2)
+frame:SetSize(COLLAPSED_W, 520 + PAD * 2)
 frame:SetPoint("CENTER")
 frame:SetBackdrop({
     bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -941,28 +941,6 @@ frame:SetScript("OnDragStop", function(self)
 end)
 frame:Hide()
 frame.name = "FontMagic"
-
-local frameTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-frameTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -(PAD - 2))
-frameTitle:SetWidth(PREVIEW_W)
-frameTitle:SetJustifyH("CENTER")
-frameTitle:SetText("FontMagic")
-
-local frameSubtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-frameSubtitle:SetPoint("TOP", frameTitle, "BOTTOM", 0, -8)
-frameSubtitle:SetWidth(PREVIEW_W + 24)
-frameSubtitle:SetJustifyH("CENTER")
-if frameSubtitle.SetWordWrap then frameSubtitle:SetWordWrap(false) end
-frameSubtitle:SetText("Floating Combat Text Font Settings")
-if frameSubtitle.SetTextColor then
-    frameSubtitle:SetTextColor(0.80, 0.80, 0.80)
-end
-
-local frameHeaderLine = frame:CreateTexture(nil, "BORDER")
-frameHeaderLine:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -HEADER_H + 6)
-frameHeaderLine:SetWidth(PREVIEW_W)
-frameHeaderLine:SetHeight(1)
-frameHeaderLine:SetColorTexture(1, 1, 1, 0.14)
 
 -- Anchor frame used to keep the left-side controls (Apply/Reset/Close/Expand) fixed
 -- when the window expands to show the optional Combat Options panel.
@@ -1913,7 +1891,7 @@ for idx, grp in ipairs(order) do
     -- two dropdowns, the spacing between them and the left/right margins add
     -- up symmetrically across the options window.  Without this adjustment
     -- the rightmost dropdown sits flush against the frame border.
-    dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row * DROPDOWN_ROW_H) + 2)
+    dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row * DROPDOWN_ROW_H))
     UIDropDownMenu_SetWidth(dd, DD_WIDTH)
     dropdowns[grp] = dd
     if idx == #order then
