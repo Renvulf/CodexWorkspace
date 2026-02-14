@@ -531,7 +531,6 @@ if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides
 if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
 if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
-if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
 if type(FontMagicDB.floatingTextGravity) ~= "number" then
     FontMagicDB.floatingTextGravity = GetResolvedSettingNumber({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }, 1.0)
 end
@@ -542,33 +541,29 @@ end
 -- Migration: older versions stored combat overrides per-character. Move them into the account DB.
 do
     local migrated = false
-    if type(FontMagicDB.combatOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.combatOverrides) do
-            if FontMagicDB.combatOverrides[k] == nil then
-                FontMagicDB.combatOverrides[k] = v
+    local function MigratePerCharacterTable(field)
+        local src = FontMagicPCDB and FontMagicPCDB[field]
+        if type(src) ~= "table" then return end
+
+        local dst = FontMagicDB[field]
+        if type(dst) ~= "table" then
+            dst = {}
+            FontMagicDB[field] = dst
+        end
+
+        for k, v in pairs(src) do
+            if dst[k] == nil then
+                dst[k] = v
             end
         end
-        FontMagicDB.combatOverrides = nil
+
+        FontMagicPCDB[field] = nil
         migrated = true
     end
-    if type(FontMagicDB.extraCombatOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.extraCombatOverrides) do
-            if FontMagicDB.extraCombatOverrides[k] == nil then
-                FontMagicDB.extraCombatOverrides[k] = v
-            end
-        end
-        FontMagicDB.extraCombatOverrides = nil
-        migrated = true
-    end
-    if type(FontMagicDB.incomingOverrides) == "table" then
-        for k, v in pairs(FontMagicDB.incomingOverrides) do
-            if FontMagicDB.incomingOverrides[k] == nil then
-                FontMagicDB.incomingOverrides[k] = v
-            end
-        end
-        FontMagicDB.incomingOverrides = nil
-        migrated = true
-    end
+
+    MigratePerCharacterTable("combatOverrides")
+    MigratePerCharacterTable("extraCombatOverrides")
+    MigratePerCharacterTable("incomingOverrides")
 
     -- If combat text was previously hidden by the old main checkbox (per-character override),
     -- clear it so we don't unexpectedly keep combat text disabled after upgrade.
@@ -853,7 +848,7 @@ local function ApplySavedCombatFont()
     if not path then
         -- Saved selection no longer exists; fall back to Default safely.
         FontMagicDB.selectedFont = ""
-        local def = GetBlizzardDefaultCombatTextFont and GetBlizzardDefaultCombatTextFont() or DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or "Fonts\FRIZQT__.TTF"
+        local def = GetBlizzardDefaultCombatTextFont and GetBlizzardDefaultCombatTextFont() or DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
         ApplyCombatTextFontPath(def)
         return
     end
@@ -886,28 +881,21 @@ local frame = CreateFrame("Frame", addonName .. "Frame", UIParent, backdropTempl
 -- be made in a single location.
 local PAD       = 20   -- distance from the outer edge to the nearest widget
 local BORDER    = 12   -- thickness of the decorative border
-local HEADER_H  = 40   -- space reserved for the InterfaceOptions header
+local HEADER_H  = 58   -- reserved vertical space for the in-frame title block
 local PREVIEW_W = 320  -- width of preview and edit boxes
--- Checkbox column width. Adjusted to ensure the combined width of the two
--- columns plus the spacing between them equals the preview width. The
--- preview box is 320px wide and we want 16px of spacing between the two
--- columns, leaving 304px for the columns themselves. 304/2 = 152.
-local CB_COL_W  = 152  -- checkbox column width
 local DD_COL_W  = 200  -- width allocated for each dropdown column
 
 -- Dropdown layout (shared by the window and menu builders)
 local DD_COLS      = 2    -- number of dropdowns per row
 local DD_MARGIN_X  = 12   -- left/right inner margin for dropdown columns
 local DD_WIDTH     = 160  -- UIDropDownMenu_SetWidth value
+local DROPDOWN_ROW_H = 50 -- vertical spacing between dropdown rows
 
--- UI spacing tweaks
--- These values are intentionally centralized so we can keep the layout
--- balanced while ensuring the lowest checkbox row never collides with the
--- bottom action buttons.
-local CONTENT_NUDGE_Y = 12  -- shifts the whole lower section up slightly
-local CHECK_BASE_Y    = -12 -- offset of the first checkbox row under the edit box
-local CHECK_ROW_H     = 30  -- vertical spacing between checkbox rows
-local CHECK_COL_GAP   = 16  -- spacing between left/right checkbox columns
+-- Shared spacing for the combat options panel
+local CONTENT_NUDGE_Y = 8
+local CHECK_ROW_H     = 28
+local COMBAT_CONTENT_W = PREVIEW_W - 10
+local COMBAT_SLIDER_W  = COMBAT_CONTENT_W - 18
 
 -- The existing widgets already expect roughly 20px from the top-left
 -- of the frame, so we simply expand the overall frame to ensure the same
@@ -922,7 +910,7 @@ local INNER_W = DD_WIDTH + (DD_MARGIN_X * 2) + ((DD_COLS - 1) * DD_COL_W)
 local COLLAPSED_W = INNER_W + PAD * 2
 local LEFT_PANEL_X = math.floor((COLLAPSED_W - PREVIEW_W) / 2 + 0.5)
 frame.__fmCollapsedW = COLLAPSED_W
-frame:SetSize(COLLAPSED_W, 500 + PAD * 2)
+frame:SetSize(COLLAPSED_W, 520 + PAD * 2)
 frame:SetPoint("CENTER")
 frame:SetBackdrop({
     bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -934,6 +922,9 @@ frame:SetBackdrop({
 })
 -- Darker, more opaque background so text stays readable even over bright scenes.
 frame:SetBackdropColor(0, 0, 0, 0.92)
+if frame.SetBackdropBorderColor then
+    frame:SetBackdropBorderColor(0.70, 0.70, 0.70, 0.90)
+end
 frame:EnableMouse(true)
 frame:SetMovable(true)
 if frame.SetClampedToScreen then pcall(frame.SetClampedToScreen, frame, true) end
@@ -950,6 +941,27 @@ frame:SetScript("OnDragStop", function(self)
 end)
 frame:Hide()
 frame.name = "FontMagic"
+
+local frameTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+frameTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -(PAD - 2))
+frameTitle:SetWidth(PREVIEW_W)
+frameTitle:SetJustifyH("CENTER")
+frameTitle:SetText("FontMagic")
+
+local frameSubtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+frameSubtitle:SetPoint("TOP", frameTitle, "BOTTOM", 0, -4)
+frameSubtitle:SetWidth(PREVIEW_W)
+frameSubtitle:SetJustifyH("CENTER")
+frameSubtitle:SetText("Floating Combat Text Font and Display Settings")
+if frameSubtitle.SetTextColor then
+    frameSubtitle:SetTextColor(0.80, 0.80, 0.80)
+end
+
+local frameHeaderLine = frame:CreateTexture(nil, "BORDER")
+frameHeaderLine:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, -HEADER_H + 6)
+frameHeaderLine:SetWidth(PREVIEW_W)
+frameHeaderLine:SetHeight(1)
+frameHeaderLine:SetColorTexture(1, 1, 1, 0.14)
 
 -- Anchor frame used to keep the left-side controls (Apply/Reset/Close/Expand) fixed
 -- when the window expands to show the optional Combat Options panel.
@@ -1014,6 +1026,7 @@ end
 local function CreateCheckbox(parent, label, x, y, checked, onClick)
     _cbId = _cbId + 1
     local cb = CreateFrame("CheckButton", addonName .. "CB" .. _cbId, parent, "UICheckButtonTemplate")
+    cb:SetSize(26, 26)
     cb:SetPoint("TOPLEFT", x, y)
     SetCheckButtonLabel(cb, label)
 
@@ -1022,7 +1035,7 @@ local function CreateCheckbox(parent, label, x, y, checked, onClick)
         local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
         if fs and fs.ClearAllPoints and fs.SetPoint then
             fs:ClearAllPoints()
-            fs:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+            fs:SetPoint("LEFT", cb, "RIGHT", 4, 0)
             if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
             cb.__fmLabelFS = fs
         end
@@ -1039,7 +1052,6 @@ local dropdowns = {}
 local preview
 local editBox
 local mainShowCombatTextCB
-local mainShowSelfCombatTextCB
 local previewHeaderFS
 -- holds a font selection made via the dropdowns but not yet applied
 local pendingFont
@@ -1688,8 +1700,8 @@ SetPreviewFont = function(fontObj, path)
                 if myToken ~= __fmPreviewToken then return false end
 
                 if measure and type(measure.SetFont) == "function" then
-                    local ok, ret = pcall(measure.SetFont, measure, path, sz, flagsToUse)
-                    if not ok or ret == nil or ret == false then return false end
+                    local ok = pcall(measure.SetFont, measure, path, sz, flagsToUse)
+                    if not ok then return false end
                     if measure.SetText then
                         measure:SetText(sample)
                     end
@@ -1701,11 +1713,11 @@ SetPreviewFont = function(fontObj, path)
                 -- Fallback: if we cannot create a measure string, temporarily measure on the preview.
                 local old = GetCurrentPreviewText()
                 if preview.SetText then preview:SetText(sample) end
-                local ok, ret = pcall(preview.SetFont, preview, path, sz, flagsToUse)
+                local ok = pcall(preview.SetFont, preview, path, sz, flagsToUse)
                 local w = (preview.GetStringWidth and preview:GetStringWidth()) or 0
                 local h = (preview.GetStringHeight and preview:GetStringHeight()) or 0
                 if preview.SetText then preview:SetText(old) end
-                if not ok or ret == nil or ret == false then return false end
+                if not ok then return false end
                 return (w <= maxW and h <= (maxH - 2))
             end
 
@@ -1900,7 +1912,7 @@ for idx, grp in ipairs(order) do
     -- two dropdowns, the spacing between them and the left/right margins add
     -- up symmetrically across the options window.  Without this adjustment
     -- the rightmost dropdown sits flush against the frame border.
-    dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row*50) + 8)
+    dd:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -(HEADER_H + row * DROPDOWN_ROW_H) + 6)
     UIDropDownMenu_SetWidth(dd, DD_WIDTH)
     dropdowns[grp] = dd
     if idx == #order then
@@ -1908,15 +1920,12 @@ for idx, grp in ipairs(order) do
     end
 
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    -- position label so its left edge aligns with the dropdown
+    -- Left-align labels with the dropdown text for faster scanning.
     label:ClearAllPoints()
-    label:SetPoint("BOTTOM", dd, "TOP", 0, 3)
-    -- Use the frame's GetWidth() method to obtain the dropdown width.
-    -- UIDropDownMenu_GetWidth has been removed in Dragonflight and older
-    -- globals may not return a valid number. GetWidth() is available on all
-    -- frames and ensures a numeric width is returned.
-    label:SetWidth(dd:GetWidth())
-    label:SetJustifyH("CENTER")
+    label:SetPoint("BOTTOMLEFT", dd, "TOPLEFT", 16, 2)
+    label:SetWidth(DD_WIDTH + 10)
+    label:SetJustifyH("LEFT")
+    if label.SetTextColor then label:SetTextColor(0.82, 0.82, 0.82) end
     label:SetText(grp)
 
     if grp == "Custom" then
@@ -2046,9 +2055,7 @@ local scaleLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 -- height, the number of dropdown rows and additional padding.
 do
     local rows = math.ceil(#order / DD_COLS)
-    -- Nudge the whole lower section up slightly so the checkbox block stays
-    -- comfortably above the bottom action buttons.
-    local y = -(HEADER_H + rows * 50) - 20 + CONTENT_NUDGE_Y + 6
+    local y = -(HEADER_H + rows * DROPDOWN_ROW_H) - 10 + CONTENT_NUDGE_Y
     scaleLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT_PANEL_X, y)
 end
 scaleLabel:SetWidth(PREVIEW_W)
@@ -2225,6 +2232,12 @@ editBox:SetAutoFocus(false)
 editBox:SetText("12345")
 editBox:SetScript("OnTextChanged", function(self) preview:SetText(self:GetText()) end)
 
+local actionDivider = frame:CreateTexture(nil, "BORDER")
+actionDivider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", LEFT_PANEL_X, 112)
+actionDivider:SetWidth(PREVIEW_W)
+actionDivider:SetHeight(1)
+actionDivider:SetColorTexture(1, 1, 1, 0.12)
+
 -- Discard un-applied font previews whenever the window closes.
 -- This ensures that reopening the addon always reflects the *currently applied*
 -- combat text font (saved in FontMagicDB, or Blizzard default when none is saved),
@@ -2284,11 +2297,11 @@ local incomingInit = false
 
 -- Collapsible combat text options button (integrated label + arrow for a cleaner look)
 local expandBtn = CreateFrame("Button", addonName .. "ExpandBtn", frame, "UIPanelButtonTemplate")
-expandBtn:SetSize(170, 24)
+expandBtn:SetSize(PREVIEW_W, 24)
 expandBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 44)
 
 local function UpdateExpandToggleText()
-    local txt = "Combat text options"
+    local txt = isExpanded and "Hide Combat Text Options <" or "Show Combat Text Options >"
     if expandBtn and expandBtn.SetText then
         expandBtn:SetText(txt)
     end
@@ -2306,8 +2319,7 @@ expandBtn:SetFrameLevel((frame:GetFrameLevel() or 0) + 50)
 expandBtn:SetScript("OnEnter", function(self)
     if GameTooltip then
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Combat text options", 1, 1, 1, 1, true)
-        GameTooltip:AddLine(isExpanded and "Click to hide advanced combat text controls." or "Click to show advanced combat text controls.", nil, nil, nil, true)
+        GameTooltip:SetText(isExpanded and "Combat Text Options <" or "Combat Text Options >", 1, 1, 1, 1, true)
         GameTooltip:Show()
     end
 end)
@@ -2346,13 +2358,19 @@ combatDivider:SetWidth(1)
 combatDivider:SetColorTexture(1, 1, 1, 0.12)
 
 
-local combatTitle = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+local combatTitle = combatPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 combatTitle:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -8)
 combatTitle:SetText("Combat Text Options")
 
+local combatTitleLine = combatPanel:CreateTexture(nil, "BORDER")
+combatTitleLine:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 10, -30)
+combatTitleLine:SetPoint("TOPRIGHT", combatPanel, "TOPRIGHT", -10, -30)
+combatTitleLine:SetHeight(1)
+combatTitleLine:SetColorTexture(1, 1, 1, 0.12)
+
 
 local combatScroll = CreateFrame("ScrollFrame", addonName .. "CombatScroll", combatPanel, "UIPanelScrollFrameTemplate")
-combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -30)
+combatScroll:SetPoint("TOPLEFT", combatPanel, "TOPLEFT", 8, -34)
 combatScroll:SetPoint("BOTTOMRIGHT", combatPanel, "BOTTOMRIGHT", -26, 10)
 
 local combatContent = CreateFrame("Frame", nil, combatScroll)
@@ -2682,176 +2700,6 @@ local function ApplyIncomingOverrides()
     end
 end
 
-local SELF_COMBAT_TEXT_DEF_KEYS = {
-    -- Use the same curated combat option definitions/reset path first.
-    "combatDamage",
-    "combatHealing",
-    "combatHealingAbsorbSelf",
-    "dodgeParryMiss",
-    "damageReduction",
-    "friendlyHealers",
-}
-
-local SELF_COMBAT_TEXT_FALLBACK_CVARS = {
-    -- Legacy fallback only (used when no curated setting can be resolved).
-    "floatingCombatTextCombatDamage",
-    "floatingCombatTextCombatDamage_v2",
-    "floatingCombatTextCombatDamage_V2",
-    "floatingCombatTextCombatHealing",
-    "floatingCombatTextCombatHealing_v2",
-    "floatingCombatTextCombatHealing_V2",
-    "floatingCombatTextCombatHealingAbsorbSelf",
-    "floatingCombatTextCombatHealingAbsorbSelf_v2",
-    "floatingCombatTextCombatHealingAbsorbSelf_V2",
-    "floatingCombatTextDodgeParryMiss",
-    "floatingCombatTextDodgeParryMiss_v2",
-    "floatingCombatTextDodgeParryMiss_V2",
-    "floatingCombatTextDamageReduction",
-    "floatingCombatTextDamageReduction_v2",
-    "floatingCombatTextDamageReduction_V2",
-    "floatingCombatTextFriendlyHealers",
-    "floatingCombatTextFriendlyHealers_v2",
-    "floatingCombatTextFriendlyHealers_V2",
-}
-
-local function ResolveSelfCombatTextTargets()
-    local out, seen = {}, {}
-
-    for _, key in ipairs(SELF_COMBAT_TEXT_DEF_KEYS) do
-        local def = DEF_BY_KEY and DEF_BY_KEY[key]
-        if def and type(def.candidates) == "table" then
-            local name, commandType = ResolveConsoleSetting(def.candidates)
-            if name and commandType ~= nil then
-                local sig = name .. "#" .. tostring(commandType)
-                if not seen[sig] then
-                    seen[sig] = true
-                    out[#out + 1] = { name = name, ct = commandType }
-                end
-            end
-        end
-    end
-
-    return out
-end
-
-local function SetSelfCombatTextCVar(name, enabled)
-    if type(name) ~= "string" or name == "" then return false end
-    if not DoesCVarExist(name) then return false end
-
-    local value = enabled and "1" or "0"
-
-    if type(SetCVar) == "function" then
-        local ok = pcall(SetCVar, name, value)
-        if ok then return true end
-    end
-
-    if type(C_CVar) == "table" and type(C_CVar.SetCVar) == "function" then
-        local ok = pcall(C_CVar.SetCVar, name, value)
-        if ok then return true end
-    end
-
-    return false
-end
-
-local function ApplySelfCombatTextEnabled(enabled)
-    local want = enabled and true or false
-    local appliedAny = false
-
-    -- Primary path: same resolved combat setting mechanism used by the
-    -- combat options panel and reset logic.
-    local targets = ResolveSelfCombatTextTargets()
-    for _, target in ipairs(targets) do
-        if target and target.name then
-            ApplyConsoleSetting(target.name, target.ct, want and "1" or "0")
-            appliedAny = true
-        end
-    end
-
-    -- Legacy CVar fallback only if no curated/console targets are available.
-    if not appliedAny then
-        for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
-            if SetSelfCombatTextCVar(cvar, want) then
-                appliedAny = true
-            end
-        end
-    end
-
-    if EnsureIncomingReady() then
-        SetIncomingDamageEnabled(want)
-        SetIncomingHealingEnabled(want)
-        appliedAny = true
-    end
-
-    return appliedAny
-end
-
-local function GetSelfCombatTextCurrentState()
-    local supported = false
-    local cvarState = nil
-
-    local function foldState(current, newValue)
-        if newValue == nil then return current end
-        if current == nil then return (newValue and true or false) end
-        return current and (newValue and true or false)
-    end
-
-    local targets = ResolveSelfCombatTextTargets()
-    if #targets > 0 then supported = true end
-    for _, target in ipairs(targets) do
-        local v = GetLiveBoolCVar(target.name)
-        cvarState = foldState(cvarState, v)
-    end
-
-    -- Read legacy CVars only if curated settings weren't readable.
-    if cvarState == nil then
-        for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
-            if DoesCVarExist(cvar) then supported = true end
-            local v = GetLiveBoolCVar(cvar)
-            cvarState = foldState(cvarState, v)
-        end
-    end
-
-    local incomingState = nil
-    if EnsureIncomingReady() and type(COMBAT_TEXT_TYPE_INFO) == "table" then
-        supported = true
-        local dmgEnabled = (COMBAT_TEXT_TYPE_INFO.DAMAGE ~= nil or COMBAT_TEXT_TYPE_INFO.SPELL_DAMAGE ~= nil)
-        local healEnabled = (COMBAT_TEXT_TYPE_INFO.HEAL ~= nil or COMBAT_TEXT_TYPE_INFO.PERIODIC_HEAL ~= nil)
-        incomingState = (dmgEnabled and healEnabled) and true or false
-    end
-
-    if cvarState ~= nil and incomingState ~= nil then
-        return (cvarState and incomingState), supported
-    end
-    if cvarState ~= nil then
-        return cvarState, supported
-    end
-    if incomingState ~= nil then
-        return incomingState, supported
-    end
-
-    FontMagicDB = FontMagicDB or {}
-    if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
-    return FontMagicDB.showSelfCombatText and true or false, supported
-end
-
-local function IsSelfCombatTextSupported()
-    if #ResolveSelfCombatTextTargets() > 0 then
-        return true
-    end
-
-    for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
-        if DoesCVarExist(cvar) then
-            return true
-        end
-    end
-
-    if EnsureIncomingReady() then
-        return true
-    end
-
-    return false
-end
-
 local function ApplyCombatOverrides()
     if type(FontMagicDB) == "table" and type(FontMagicDB.combatOverrides) == "table" then
         for key, val in pairs(FontMagicDB.combatOverrides) do
@@ -3162,9 +3010,6 @@ local function SetCombatTextMasterEnabled(wantEnabled)
         end
         FontMagicDB.combatMasterSnapshot = nil
         FontMagicDB.combatMasterOffByFontMagic = nil
-
-        if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
-        ApplySelfCombatTextEnabled(FontMagicDB.showSelfCombatText and true or false)
     else
         if not (FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table") then
             CaptureCombatTextMasterSnapshot()
@@ -3174,47 +3019,15 @@ local function SetCombatTextMasterEnabled(wantEnabled)
 end
 
 local function UpdateMainCombatCheckboxes()
-    local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
-
     if mainShowCombatTextCB and mainShowCombatTextCB.SetChecked then
         if not IsCombatTextMasterSupported() then
             if mainShowCombatTextCB.Disable then pcall(mainShowCombatTextCB.Disable, mainShowCombatTextCB) end
             -- If we can't control it on this client, default to showing it as enabled so the
             -- checkbox doesn't look "wrong" on first load.
-            mainShowCombatTextCB:SetChecked(masterEnabled)
+            mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
         else
             if mainShowCombatTextCB.Enable then pcall(mainShowCombatTextCB.Enable, mainShowCombatTextCB) end
-            mainShowCombatTextCB:SetChecked(masterEnabled)
-        end
-    end
-
-    if mainShowSelfCombatTextCB and mainShowSelfCombatTextCB.SetChecked then
-        FontMagicDB = FontMagicDB or {}
-        local liveSelfEnabled, selfSupported = GetSelfCombatTextCurrentState()
-        FontMagicDB.showSelfCombatText = liveSelfEnabled and true or false
-        mainShowSelfCombatTextCB:SetChecked(liveSelfEnabled and true or false)
-
-        local showLabel = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
-        local showR, showG, showB = 1, 1, 1
-        if showLabel and showLabel.GetTextColor then
-            local r, g, b = showLabel:GetTextColor()
-            if r ~= nil and g ~= nil and b ~= nil then
-                showR, showG, showB = r, g, b
-            end
-        end
-
-        if (not masterEnabled) or (not selfSupported) then
-            if mainShowSelfCombatTextCB.Disable then pcall(mainShowSelfCombatTextCB.Disable, mainShowSelfCombatTextCB) end
-            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 0.5, 0.5, 0.5)
-            local tip = (not masterEnabled)
-                and "Requires \"Show Combat Text\" to be enabled."
-                or "Not available on this client."
-            AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self", tip)
-        else
-            if mainShowSelfCombatTextCB.Enable then pcall(mainShowSelfCombatTextCB.Enable, mainShowSelfCombatTextCB) end
-            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, showR, showG, showB)
-            AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self",
-                "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
+            mainShowCombatTextCB:SetChecked(IsCombatTextMasterCurrentlyEnabled() and true or false)
         end
     end
 end
@@ -3224,6 +3037,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local combatWidgets = {}
+local combatSliderPool = {}
 
 local function ClearCombatWidgets()
     for _, w in ipairs(combatWidgets) do
@@ -3272,12 +3086,26 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
     valText:SetPoint("TOPRIGHT", combatContent, "TOPRIGHT", -10, y)
     table.insert(combatWidgets, valText)
 
-    local s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
+    -- Reuse slider frames by key so UI rebuilds never attempt to recreate the same
+    -- globally named frame (which would error once the name is already taken).
+    local s = combatSliderPool[key]
+    if not s then
+        s = CreateFrame("Slider", addonName .. "Combat" .. key .. "Slider", combatContent, "OptionsSliderTemplate")
+        combatSliderPool[key] = s
+    else
+        s:SetParent(combatContent)
+        s:Show()
+    end
+    s:ClearAllPoints()
     s:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 8, -6)
-    s:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 30)
+    s:SetWidth(COMBAT_SLIDER_W)
     s:SetMinMaxValues(minVal, maxVal)
     s:SetValueStep(step)
     s:SetObeyStepOnDrag(false)
+    s:SetScript("OnValueChanged", nil)
+    s:SetScript("OnMouseUp", nil)
+    s:SetScript("OnEnter", nil)
+    s:SetScript("OnLeave", nil)
 
     local low = _G[s:GetName() .. "Low"]
     local high = _G[s:GetName() .. "High"]
@@ -3333,21 +3161,20 @@ local function CreateOptionSlider(y, key, label, minVal, maxVal, step, value, on
 end
 
 local function CreateOptionCheckbox(col, y, label, checked, onClick, tip)
-    local x = (col == 0) and 0 or (CB_COL_W + CHECK_COL_GAP)
+    local x = 0
     local cb = CreateCheckbox(combatContent, label, 0, 0, checked, onClick)
     cb:ClearAllPoints()
     cb:SetPoint("TOPLEFT", combatContent, "TOPLEFT", x, y)
 
-    -- Constrain the label so the two checkbox columns never overlap.
+    -- Keep the list single-column and readable on all clients/scales.
     local fs = cb and (cb.__fmLabelFS or GetCheckButtonLabelFS(cb))
     if fs then
-        -- Use a slightly smaller font so longer labels still fit nicely.
         if fs.SetFontObject and type(GameFontHighlightSmall) ~= "nil" then
             pcall(fs.SetFontObject, fs, GameFontHighlightSmall)
         end
-        if fs.SetWidth then fs:SetWidth(CB_COL_W - 26) end
+        if fs.SetWidth then fs:SetWidth(COMBAT_CONTENT_W - 30) end
         if fs.SetJustifyH then fs:SetJustifyH("LEFT") end
-        if fs.SetWordWrap then fs:SetWordWrap(true) end
+        if fs.SetWordWrap then fs:SetWordWrap(false) end
     end
 
     if tip then AttachTooltip(cb, label, tip) end
@@ -3417,10 +3244,9 @@ local function BuildCombatOptionsUI()
     local row = 0
 
     local function place()
-        local col = (row % 2 == 0) and 0 or 1
-        local yy = y - math.floor(row / 2) * CHECK_ROW_H
+        local yy = y - row * CHECK_ROW_H
         row = row + 1
-        return col, yy
+        return yy
     end
 
     local masterOff = (FontMagicDB and FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table") and true or false
@@ -3430,7 +3256,7 @@ local function BuildCombatOptionsUI()
         y = AddHeader("Note", y - 2)
         local note = combatContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         note:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
-        note:SetWidth(CB_COL_W * 2 + CHECK_COL_GAP - 10)
+        note:SetWidth(COMBAT_CONTENT_W)
         note:SetJustifyH("LEFT")
         note:SetJustifyV("TOP")
         note:SetText("Combat text is currently hidden by the main \"Show combat text\" toggle. Enable it in the main panel to edit these options.")
@@ -3453,8 +3279,8 @@ local function BuildCombatOptionsUI()
                     checked = (tonumber(snap.cvars[n]) == 1) and true or false
                 end
 
-                local c, yy = place()
-                local cb = CreateOptionCheckbox(c, yy, def.label, checked, function(self)
+                local yy = place()
+                local cb = CreateOptionCheckbox(0, yy, def.label, checked, function(self)
                     local newVal = self:GetChecked() and true or false
                     if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides = {} end
                     FontMagicDB.combatOverrides[def.key] = newVal
@@ -3466,7 +3292,7 @@ local function BuildCombatOptionsUI()
         end
     end
 
-    y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
+    y = y - (row * CHECK_ROW_H) - 10
 
     if EnsureIncomingReady() then
         y = AddHeader("Incoming message filters", y)
@@ -3494,7 +3320,7 @@ local function BuildCombatOptionsUI()
             SetIncomingDamageEnabled(newVal)
         end, "Shows or hides scrolling combat text for damage you take.\n\n(Only available on clients that load Blizzard_CombatText.)")
 
-        local cb2 = CreateOptionCheckbox(1, y, "Show Incoming Healing", showHeal, function(self)
+        local cb2 = CreateOptionCheckbox(0, y - CHECK_ROW_H, "Show Incoming Healing", showHeal, function(self)
             local newVal = self:GetChecked() and true or false
             if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
             FontMagicDB.incomingOverrides.incomingHealing = newVal
@@ -3506,7 +3332,7 @@ local function BuildCombatOptionsUI()
             if cb2 and cb2.Disable then pcall(cb2.Disable, cb2) end
         end
 
-        y = y - CHECK_ROW_H - 10
+        y = y - (CHECK_ROW_H * 2) - 10
     end
 
     y = AddHeader("Floating text motion", y)
@@ -3588,9 +3414,9 @@ local function BuildCombatOptionsUI()
                         checked = (tonumber(snap.cvars[n]) == 1) and true or false
                     end
 
-                    local c, yy = place()
+                    local yy = place()
                     local tip = GetExtraCombatTextCVarTooltip(cvar)
-                    local cb = CreateOptionCheckbox(c, yy, PrettyCVarLabel(cvar), checked, function(self)
+                    local cb = CreateOptionCheckbox(0, yy, PrettyCVarLabel(cvar), checked, function(self)
                         local newVal = self:GetChecked() and true or false
                         if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
                         FontMagicDB.extraCombatOverrides[cvar] = newVal
@@ -3601,7 +3427,7 @@ local function BuildCombatOptionsUI()
                 end
             end
 
-            y = y - (math.ceil(row / 2) * CHECK_ROW_H) - 10
+            y = y - (row * CHECK_ROW_H) - 10
         end
     end
 
@@ -3648,13 +3474,8 @@ end)
 
 -- 8) APPLY & DEFAULT BUTTONS ----------------------------------------------- -----------------------------------------------
 local applyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
--- Match the width of the Default button for consistency
-applyBtn:SetSize(100, 22)
--- Position slightly closer to the bottom border now that the
--- overall frame height has been reduced
--- keep the action buttons in place or slightly lower so they no longer
--- overlap the lowest checkboxes
-applyBtn:SetPoint("BOTTOMLEFT", 16, 12)
+applyBtn:SetSize(110, 24)
+applyBtn:SetPoint("BOTTOMLEFT", 16, 16)
 applyBtn:SetText("Apply")
 
 
@@ -3668,104 +3489,20 @@ mainShowCombatTextCB = CreateCheckbox(frame, "Show Combat Text", 0, 0, true,
         local want = self:GetChecked() and true or false
         SetCombatTextMasterEnabled(want)
         RefreshCombatTextCVars()
-        UpdateMainCombatCheckboxes()
     end
 )
 mainShowCombatTextCB:ClearAllPoints()
-mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 66)
+-- Keep this quick toggle above the action buttons and away from the expandable panel toggle.
+mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 82)
+do
+    local fs = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
+    if fs and fs.SetWidth then fs:SetWidth(240) end
+    if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
+    if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
+end
 AttachTooltip(mainShowCombatTextCB, "Show Combat Text",
     "Shows or hides Blizzard floating combat text without losing your per-type settings.\n\n" ..
     "When you hide it, FontMagic stores your current combat text settings and restores them when you enable it again.")
-
-mainShowSelfCombatTextCB = CreateCheckbox(frame, "Scrolling combat text for self", 0, 0, true,
-    function(self)
-        FontMagicDB = FontMagicDB or {}
-        if not IsSelfCombatTextSupported() then
-            UpdateMainCombatCheckboxes()
-            return
-        end
-
-        local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
-        local enabled = self:GetChecked() and true or false
-        local requested = masterEnabled and enabled or false
-        FontMagicDB.showSelfCombatText = requested and true or false
-        ApplySelfCombatTextEnabled(requested)
-
-        local liveEnabled = GetSelfCombatTextCurrentState()
-        FontMagicDB.showSelfCombatText = liveEnabled and true or false
-
-        RefreshCombatTextCVars()
-        UpdateMainCombatCheckboxes()
-    end
-)
-AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self",
-    "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
-
-local function LayoutCombatTextRow()
-    if not (mainShowCombatTextCB and mainShowSelfCombatTextCB) then return end
-
-    local showText = mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB)
-    local selfText = mainShowSelfCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowSelfCombatTextCB)
-    if not (showText and selfText) then return end
-
-    mainShowCombatTextCB.__fmLabelFS = showText
-    mainShowSelfCombatTextCB.__fmLabelFS = selfText
-
-    mainShowCombatTextCB:ClearAllPoints()
-    mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 66)
-    mainShowCombatTextCB:SetSize(24, 24)
-
-    mainShowSelfCombatTextCB:ClearAllPoints()
-    mainShowSelfCombatTextCB:SetPoint("TOPLEFT", mainShowCombatTextCB, "BOTTOMLEFT", 0, -4)
-    mainShowSelfCombatTextCB:SetSize(24, 24)
-
-    showText:ClearAllPoints()
-    showText:SetPoint("LEFT", mainShowCombatTextCB, "RIGHT", 4, 0)
-    showText:SetJustifyH("LEFT")
-    if showText.SetWordWrap then showText:SetWordWrap(false) end
-
-    selfText:ClearAllPoints()
-    selfText:SetPoint("TOPLEFT", mainShowSelfCombatTextCB, "TOPRIGHT", 4, -2)
-    if selfText.SetWidth then
-        local leftPaneW = (frame.__fmLeftAnchor and frame.__fmLeftAnchor.GetWidth and frame.__fmLeftAnchor:GetWidth())
-            or frame.__fmCollapsedW
-            or frame:GetWidth()
-            or 0
-        local btnW = (expandBtn and expandBtn.GetWidth and expandBtn:GetWidth()) or 170
-        local availableW = math.floor(leftPaneW - 16 - btnW - 10 - (16 + 24 + 4))
-        selfText:SetWidth(math.max(120, availableW))
-    end
-    selfText:SetJustifyH("LEFT")
-    if selfText.SetJustifyV then selfText:SetJustifyV("TOP") end
-    if selfText.SetWordWrap then selfText:SetWordWrap(true) end
-
-    if selfText.SetFontObject and showText.GetFontObject then
-        local showFO = showText:GetFontObject()
-        if showFO then
-            pcall(selfText.SetFontObject, selfText, showFO)
-        end
-    end
-
-    if selfText.SetTextColor and showText.GetTextColor then
-        local r, g, b = showText:GetTextColor()
-        if r ~= nil and g ~= nil and b ~= nil then
-            selfText:SetTextColor(r, g, b)
-        end
-    end
-
-    if mainShowCombatTextCB.SetHitRectInsets then
-        mainShowCombatTextCB:SetHitRectInsets(0, 0, 0, 0)
-    end
-    if mainShowSelfCombatTextCB.SetHitRectInsets then
-        mainShowSelfCombatTextCB:SetHitRectInsets(0, 0, 0, 0)
-    end
-end
-
-LayoutCombatTextRow()
-frame:HookScript("OnShow", function()
-    LayoutCombatTextRow()
-    UpdateMainCombatCheckboxes()
-end)
 
 applyBtn:SetScript("OnClick", function()
     -- use the pending selection if the user picked a font but hasn't applied yet
@@ -3807,8 +3544,8 @@ applyBtn:SetScript("OnClick", function()
 end)
 
 local defaultBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-defaultBtn:SetSize(100,22)
-defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", 8, 0)
+defaultBtn:SetSize(110, 24)
+defaultBtn:SetPoint("LEFT", applyBtn, "RIGHT", 10, 0)
 defaultBtn:SetText("Reset")
 
 AttachTooltip(defaultBtn, "Reset", "Restore Blizzard defaults. Choose what to reset.")
@@ -3934,7 +3671,6 @@ local function ResetCombatOptionsOnly()
     FontMagicDB.incomingOverrides = {}
     FontMagicDB.combatMasterSnapshot = nil
     FontMagicDB.combatMasterOffByFontMagic = nil
-    FontMagicDB.showSelfCombatText = true
 
     local function ResetBoolCVarToDefault(name)
         if not name then return end
@@ -4108,10 +3844,10 @@ end)
 
 -- 11) CLOSE BUTTON
 local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-closeBtn:SetSize(80, 24)
+closeBtn:SetSize(90, 24)
 -- Align with the Apply button and use the reduced
 -- bottom spacing
-closeBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 12)
+closeBtn:SetPoint("BOTTOMRIGHT", (frame.__fmLeftAnchor or frame), "BOTTOMRIGHT", -16, 16)
 -- Keep the expand toggle neatly above Close
 if expandBtn and expandBtn.ClearAllPoints and expandBtn.SetPoint then
     expandBtn:ClearAllPoints()
@@ -4387,15 +4123,9 @@ local function ApplyAllSavedOverrides()
     ApplyIncomingOverrides()
     ApplyFloatingTextMotionSettings()
 
-    FontMagicDB = FontMagicDB or {}
-    if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
-
     -- If combat text was hidden via the master toggle, keep it hidden across relogs.
-    if FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
+    if FontMagicDB and FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table" then
         ApplyCombatTextMasterDisabled()
-        ApplySelfCombatTextEnabled(false)
-    else
-        ApplySelfCombatTextEnabled(FontMagicDB.showSelfCombatText and true or false)
     end
 end
 
