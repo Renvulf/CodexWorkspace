@@ -2682,12 +2682,57 @@ local function ApplyIncomingOverrides()
     end
 end
 
-local SELF_COMBAT_TEXT_SETTING_CANDIDATES = {
-    { "floatingCombatTextDodgeParryMiss", "floatingCombatTextDodgeParryMiss_v2", "floatingCombatTextDodgeParryMiss_V2" },
-    { "floatingCombatTextDamageReduction", "floatingCombatTextDamageReduction_v2", "floatingCombatTextDamageReduction_V2" },
-    { "floatingCombatTextFriendlyHealers", "floatingCombatTextFriendlyHealers_v2", "floatingCombatTextFriendlyHealers_V2" },
-    { "floatingCombatTextCombatHealingAbsorbSelf", "floatingCombatTextCombatHealingAbsorbSelf_v2", "floatingCombatTextCombatHealingAbsorbSelf_V2" },
+local SELF_COMBAT_TEXT_DEF_KEYS = {
+    -- Use the same curated combat option definitions/reset path first.
+    "combatDamage",
+    "combatHealing",
+    "combatHealingAbsorbSelf",
+    "dodgeParryMiss",
+    "damageReduction",
+    "friendlyHealers",
 }
+
+local SELF_COMBAT_TEXT_FALLBACK_CVARS = {
+    -- Legacy fallback only (used when no curated setting can be resolved).
+    "floatingCombatTextCombatDamage",
+    "floatingCombatTextCombatDamage_v2",
+    "floatingCombatTextCombatDamage_V2",
+    "floatingCombatTextCombatHealing",
+    "floatingCombatTextCombatHealing_v2",
+    "floatingCombatTextCombatHealing_V2",
+    "floatingCombatTextCombatHealingAbsorbSelf",
+    "floatingCombatTextCombatHealingAbsorbSelf_v2",
+    "floatingCombatTextCombatHealingAbsorbSelf_V2",
+    "floatingCombatTextDodgeParryMiss",
+    "floatingCombatTextDodgeParryMiss_v2",
+    "floatingCombatTextDodgeParryMiss_V2",
+    "floatingCombatTextDamageReduction",
+    "floatingCombatTextDamageReduction_v2",
+    "floatingCombatTextDamageReduction_V2",
+    "floatingCombatTextFriendlyHealers",
+    "floatingCombatTextFriendlyHealers_v2",
+    "floatingCombatTextFriendlyHealers_V2",
+}
+
+local function ResolveSelfCombatTextTargets()
+    local out, seen = {}, {}
+
+    for _, key in ipairs(SELF_COMBAT_TEXT_DEF_KEYS) do
+        local def = DEF_BY_KEY and DEF_BY_KEY[key]
+        if def and type(def.candidates) == "table" then
+            local name, commandType = ResolveConsoleSetting(def.candidates)
+            if name and commandType ~= nil then
+                local sig = name .. "#" .. tostring(commandType)
+                if not seen[sig] then
+                    seen[sig] = true
+                    out[#out + 1] = { name = name, ct = commandType }
+                end
+            end
+        end
+    end
+
+    return out
+end
 
 local function SetSelfCombatTextCVar(name, enabled)
     if type(name) ~= "string" or name == "" then return false end
@@ -2709,26 +2754,94 @@ local function SetSelfCombatTextCVar(name, enabled)
 end
 
 local function ApplySelfCombatTextEnabled(enabled)
-    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
-        for _, cvar in ipairs(candidates) do
-            if SetSelfCombatTextCVar(cvar, enabled and true or false) then
-                break
+    local want = enabled and true or false
+    local appliedAny = false
+
+    -- Primary path: same resolved combat setting mechanism used by the
+    -- combat options panel and reset logic.
+    local targets = ResolveSelfCombatTextTargets()
+    for _, target in ipairs(targets) do
+        if target and target.name then
+            ApplyConsoleSetting(target.name, target.ct, want and "1" or "0")
+            appliedAny = true
+        end
+    end
+
+    -- Legacy CVar fallback only if no curated/console targets are available.
+    if not appliedAny then
+        for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
+            if SetSelfCombatTextCVar(cvar, want) then
+                appliedAny = true
             end
         end
     end
 
     if EnsureIncomingReady() then
-        SetIncomingDamageEnabled(enabled and true or false)
-        SetIncomingHealingEnabled(enabled and true or false)
+        SetIncomingDamageEnabled(want)
+        SetIncomingHealingEnabled(want)
+        appliedAny = true
     end
+
+    return appliedAny
+end
+
+local function GetSelfCombatTextCurrentState()
+    local supported = false
+    local cvarState = nil
+
+    local function foldState(current, newValue)
+        if newValue == nil then return current end
+        if current == nil then return (newValue and true or false) end
+        return current and (newValue and true or false)
+    end
+
+    local targets = ResolveSelfCombatTextTargets()
+    if #targets > 0 then supported = true end
+    for _, target in ipairs(targets) do
+        local v = GetLiveBoolCVar(target.name)
+        cvarState = foldState(cvarState, v)
+    end
+
+    -- Read legacy CVars only if curated settings weren't readable.
+    if cvarState == nil then
+        for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
+            if DoesCVarExist(cvar) then supported = true end
+            local v = GetLiveBoolCVar(cvar)
+            cvarState = foldState(cvarState, v)
+        end
+    end
+
+    local incomingState = nil
+    if EnsureIncomingReady() and type(COMBAT_TEXT_TYPE_INFO) == "table" then
+        supported = true
+        local dmgEnabled = (COMBAT_TEXT_TYPE_INFO.DAMAGE ~= nil or COMBAT_TEXT_TYPE_INFO.SPELL_DAMAGE ~= nil)
+        local healEnabled = (COMBAT_TEXT_TYPE_INFO.HEAL ~= nil or COMBAT_TEXT_TYPE_INFO.PERIODIC_HEAL ~= nil)
+        incomingState = (dmgEnabled and healEnabled) and true or false
+    end
+
+    if cvarState ~= nil and incomingState ~= nil then
+        return (cvarState and incomingState), supported
+    end
+    if cvarState ~= nil then
+        return cvarState, supported
+    end
+    if incomingState ~= nil then
+        return incomingState, supported
+    end
+
+    FontMagicDB = FontMagicDB or {}
+    if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
+    return FontMagicDB.showSelfCombatText and true or false, supported
 end
 
 local function IsSelfCombatTextSupported()
-    for _, candidates in ipairs(SELF_COMBAT_TEXT_SETTING_CANDIDATES) do
-        for _, cvar in ipairs(candidates) do
-            if DoesCVarExist(cvar) then
-                return true
-            end
+    if #ResolveSelfCombatTextTargets() > 0 then
+        return true
+    end
+
+    for _, cvar in ipairs(SELF_COMBAT_TEXT_FALLBACK_CVARS) do
+        if DoesCVarExist(cvar) then
+            return true
         end
     end
 
@@ -3077,10 +3190,20 @@ local function UpdateMainCombatCheckboxes()
 
     if mainShowSelfCombatTextCB and mainShowSelfCombatTextCB.SetChecked then
         FontMagicDB = FontMagicDB or {}
-        if FontMagicDB.showSelfCombatText == nil then FontMagicDB.showSelfCombatText = true end
-        mainShowSelfCombatTextCB:SetChecked(FontMagicDB.showSelfCombatText and true or false)
+        local liveSelfEnabled, selfSupported = GetSelfCombatTextCurrentState()
+        FontMagicDB.showSelfCombatText = liveSelfEnabled and true or false
+        mainShowSelfCombatTextCB:SetChecked(liveSelfEnabled and true or false)
 
-        if (not masterEnabled) or (not IsSelfCombatTextSupported()) then
+        local showLabel = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
+        local showR, showG, showB = 1, 1, 1
+        if showLabel and showLabel.GetTextColor then
+            local r, g, b = showLabel:GetTextColor()
+            if r ~= nil and g ~= nil and b ~= nil then
+                showR, showG, showB = r, g, b
+            end
+        end
+
+        if (not masterEnabled) or (not selfSupported) then
             if mainShowSelfCombatTextCB.Disable then pcall(mainShowSelfCombatTextCB.Disable, mainShowSelfCombatTextCB) end
             SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 0.5, 0.5, 0.5)
             local tip = (not masterEnabled)
@@ -3089,7 +3212,7 @@ local function UpdateMainCombatCheckboxes()
             AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self", tip)
         else
             if mainShowSelfCombatTextCB.Enable then pcall(mainShowSelfCombatTextCB.Enable, mainShowSelfCombatTextCB) end
-            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, 1, 0.82, 0)
+            SetCheckButtonLabelColor(mainShowSelfCombatTextCB, showR, showG, showB)
             AttachTooltip(mainShowSelfCombatTextCB, "Scrolling combat text for self",
                 "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
         end
@@ -3557,16 +3680,21 @@ AttachTooltip(mainShowCombatTextCB, "Show Combat Text",
 mainShowSelfCombatTextCB = CreateCheckbox(frame, "Scrolling combat text for self", 0, 0, true,
     function(self)
         FontMagicDB = FontMagicDB or {}
-        local enabled = self:GetChecked() and true or false
-        FontMagicDB.showSelfCombatText = enabled
-
-        local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
-        if masterEnabled then
-            ApplySelfCombatTextEnabled(enabled)
-        else
-            ApplySelfCombatTextEnabled(false)
+        if not IsSelfCombatTextSupported() then
+            UpdateMainCombatCheckboxes()
+            return
         end
 
+        local masterEnabled = IsCombatTextMasterCurrentlyEnabled() and true or false
+        local enabled = self:GetChecked() and true or false
+        local requested = masterEnabled and enabled or false
+        FontMagicDB.showSelfCombatText = requested and true or false
+        ApplySelfCombatTextEnabled(requested)
+
+        local liveEnabled = GetSelfCombatTextCurrentState()
+        FontMagicDB.showSelfCombatText = liveEnabled and true or false
+
+        RefreshCombatTextCVars()
         UpdateMainCombatCheckboxes()
     end
 )
@@ -3588,7 +3716,7 @@ local function LayoutCombatTextRow()
     mainShowCombatTextCB:SetSize(24, 24)
 
     mainShowSelfCombatTextCB:ClearAllPoints()
-    mainShowSelfCombatTextCB:SetPoint("TOPLEFT", mainShowCombatTextCB, "BOTTOMLEFT", 0, -2)
+    mainShowSelfCombatTextCB:SetPoint("TOPLEFT", mainShowCombatTextCB, "BOTTOMLEFT", 0, -4)
     mainShowSelfCombatTextCB:SetSize(24, 24)
 
     showText:ClearAllPoints()
@@ -3597,9 +3725,19 @@ local function LayoutCombatTextRow()
     if showText.SetWordWrap then showText:SetWordWrap(false) end
 
     selfText:ClearAllPoints()
-    selfText:SetPoint("LEFT", mainShowSelfCombatTextCB, "RIGHT", 4, 0)
+    selfText:SetPoint("TOPLEFT", mainShowSelfCombatTextCB, "TOPRIGHT", 4, -2)
+    if selfText.SetWidth then
+        local leftPaneW = (frame.__fmLeftAnchor and frame.__fmLeftAnchor.GetWidth and frame.__fmLeftAnchor:GetWidth())
+            or frame.__fmCollapsedW
+            or frame:GetWidth()
+            or 0
+        local btnW = (expandBtn and expandBtn.GetWidth and expandBtn:GetWidth()) or 170
+        local availableW = math.floor(leftPaneW - 16 - btnW - 10 - (16 + 24 + 4))
+        selfText:SetWidth(math.max(120, availableW))
+    end
     selfText:SetJustifyH("LEFT")
-    if selfText.SetWordWrap then selfText:SetWordWrap(false) end
+    if selfText.SetJustifyV then selfText:SetJustifyV("TOP") end
+    if selfText.SetWordWrap then selfText:SetWordWrap(true) end
 
     if selfText.SetFontObject and showText.GetFontObject then
         local showFO = showText:GetFontObject()
@@ -3608,13 +3746,18 @@ local function LayoutCombatTextRow()
         end
     end
 
-    local showW = math.max(0, showText:GetStringWidth() or 0)
-    local selfW = math.max(0, selfText:GetStringWidth() or 0)
+    if selfText.SetTextColor and showText.GetTextColor then
+        local r, g, b = showText:GetTextColor()
+        if r ~= nil and g ~= nil and b ~= nil then
+            selfText:SetTextColor(r, g, b)
+        end
+    end
+
     if mainShowCombatTextCB.SetHitRectInsets then
-        mainShowCombatTextCB:SetHitRectInsets(0, -math.floor(showW + 12), 0, 0)
+        mainShowCombatTextCB:SetHitRectInsets(0, 0, 0, 0)
     end
     if mainShowSelfCombatTextCB.SetHitRectInsets then
-        mainShowSelfCombatTextCB:SetHitRectInsets(0, -math.floor(selfW + 12), 0, 0)
+        mainShowSelfCombatTextCB:SetHitRectInsets(0, 0, 0, 0)
     end
 end
 
