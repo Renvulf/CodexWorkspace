@@ -3544,12 +3544,6 @@ mainShowCombatTextCB = CreateCheckbox(frame, "Show Combat Text", 0, 0, true,
 )
 mainShowCombatTextCB:ClearAllPoints()
 mainShowCombatTextCB:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 66)
-do
-    local fs = mainShowCombatTextCB and (mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB))
-    if fs and fs.SetWidth then fs:SetWidth(160) end
-    if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
-    if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
-end
 AttachTooltip(mainShowCombatTextCB, "Show Combat Text",
     "Shows or hides Blizzard floating combat text without losing your per-type settings.\n\n" ..
     "When you hide it, FontMagic stores your current combat text settings and restores them when you enable it again.")
@@ -3570,16 +3564,49 @@ mainShowSelfCombatTextCB = CreateCheckbox(frame, "Self", 0, 0, true,
         UpdateMainCombatCheckboxes()
     end
 )
-mainShowSelfCombatTextCB:ClearAllPoints()
-mainShowSelfCombatTextCB:SetPoint("LEFT", mainShowCombatTextCB, "RIGHT", 28, 0)
-do
-    local fs = mainShowSelfCombatTextCB and (mainShowSelfCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowSelfCombatTextCB))
-    if fs and fs.SetWidth then fs:SetWidth(70) end
-    if fs and fs.SetJustifyH then fs:SetJustifyH("LEFT") end
-    if fs and fs.SetWordWrap then fs:SetWordWrap(false) end
-end
 AttachTooltip(mainShowSelfCombatTextCB, "Self",
     "Toggles Blizzard \"Scrolling combat text for self\" (incoming combat text on your character).")
+
+local function LayoutCombatTextRow()
+    if not (mainShowCombatTextCB and mainShowSelfCombatTextCB) then return end
+
+    local showText = mainShowCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowCombatTextCB)
+    local selfText = mainShowSelfCombatTextCB.__fmLabelFS or GetCheckButtonLabelFS(mainShowSelfCombatTextCB)
+    if not (showText and selfText) then return end
+
+    mainShowCombatTextCB.__fmLabelFS = showText
+    mainShowSelfCombatTextCB.__fmLabelFS = selfText
+
+    showText:ClearAllPoints()
+    showText:SetPoint("LEFT", mainShowCombatTextCB, "RIGHT", 4, 0)
+    showText:SetJustifyH("LEFT")
+    if showText.SetWordWrap then showText:SetWordWrap(false) end
+
+    selfText:ClearAllPoints()
+    selfText:SetPoint("LEFT", mainShowSelfCombatTextCB, "RIGHT", 4, 0)
+    selfText:SetJustifyH("LEFT")
+    if selfText.SetWordWrap then selfText:SetWordWrap(false) end
+
+    local showW = math.max(0, showText:GetStringWidth() or 0)
+    local selfW = math.max(0, selfText:GetStringWidth() or 0)
+    local padding = 14
+
+    mainShowCombatTextCB:SetWidth(24 + showW + 10)
+    mainShowSelfCombatTextCB:SetWidth(24 + selfW + 10)
+
+    mainShowSelfCombatTextCB:ClearAllPoints()
+    mainShowSelfCombatTextCB:SetPoint("LEFT", showText, "RIGHT", padding, 0)
+
+    if mainShowCombatTextCB.SetHitRectInsets then
+        mainShowCombatTextCB:SetHitRectInsets(0, -math.floor(showW + 12), 0, 0)
+    end
+    if mainShowSelfCombatTextCB.SetHitRectInsets then
+        mainShowSelfCombatTextCB:SetHitRectInsets(0, -math.floor(selfW + 12), 0, 0)
+    end
+end
+
+LayoutCombatTextRow()
+frame:HookScript("OnShow", LayoutCombatTextRow)
 
 applyBtn:SetScript("OnClick", function()
     -- use the pending selection if the user picked a font but hasn't applied yet
