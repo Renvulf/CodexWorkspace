@@ -795,22 +795,12 @@ local function ApplyCombatTextFontPath(path)
 
     local function TrySetFont(obj, size, flags)
         if obj and type(obj.SetFont) == "function" then
-            -- Preserve the object's existing size/flags when possible; different clients
-            -- use different defaults (and some create these FontObjects late).
-            if type(obj.GetFont) == "function" then
-                local _, s, f = obj:GetFont()
-                if type(s) == "number" and s > 0 then size = s end
-                if type(f) == "string" then flags = f end
-            end
-            if type(size) ~= "number" or size <= 0 then size = 25 end
-            if type(flags) ~= "string" then flags = "" end
             pcall(obj.SetFont, obj, path, size, flags)
         end
     end
 
-    -- Best-effort list; these vary by client/era.
-    -- Important: some clients use CombatDamageFont/DamageNumberFont for "damage dealt"
-    -- (outgoing) text, so include them.
+    -- A small best-effort list; these vary by client/era.
+    -- Some clients use CombatDamageFont/DamageNumberFont for "damage dealt" (outgoing) text.
     TrySetFont(_G and _G.CombatTextFont,         25, "OUTLINE")
     TrySetFont(_G and _G.CombatTextFontOutline,  25, "OUTLINE")
     TrySetFont(_G and _G.DamageFont,             25, "OUTLINE")
@@ -821,9 +811,6 @@ local function ApplyCombatTextFontPath(path)
     TrySetFont(_G and _G.DamageTextFontOutline,  25, "OUTLINE")
     TrySetFont(_G and _G.DamageNumberFont,       25, "OUTLINE")
     TrySetFont(_G and _G.CombatDamageFont,       25, "OUTLINE")
-    TrySetFont(_G and _G.CombatHealingFont,      25, "OUTLINE")
-    TrySetFont(_G and _G.CombatHealingAbsorbGlowFont, 25, "OUTLINE")
-    TrySetFont(_G and _G.WorldFont,              25, "OUTLINE")
 end
 
 local function ApplyFloatingTextMotionSettings()
