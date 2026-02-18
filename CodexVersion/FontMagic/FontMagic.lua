@@ -519,6 +519,11 @@ if type(FontMagicDB.favorites) ~= "table" then
     FontMagicDB.favorites = {}
 end
 
+-- Debug (off by default). Stored account-wide so it can be toggled quickly on any character.
+if FontMagicDB.__fmDebugCombatText == nil then
+    FontMagicDB.__fmDebugCombatText = false
+end
+
 FontMagicPCDB = FontMagicPCDB or {}
 
 -- forward declare so slash commands can toggle visibility before creation
@@ -531,6 +536,16 @@ if type(FontMagicDB.combatOverrides) ~= "table" then FontMagicDB.combatOverrides
 if type(FontMagicDB.extraCombatOverrides) ~= "table" then FontMagicDB.extraCombatOverrides = {} end
 if type(FontMagicDB.incomingOverrides) ~= "table" then FontMagicDB.incomingOverrides = {} end
 if FontMagicDB.showExtraCombatToggles == nil then FontMagicDB.showExtraCombatToggles = false end
+do
+    local v = (type(FontMagicDB.combatTextOutlineMode) == "string") and FontMagicDB.combatTextOutlineMode:upper() or "OUTLINE"
+    if v == "NONE" or v == "NO" or v == "0" then
+        FontMagicDB.combatTextOutlineMode = "NONE"
+    elseif v == "THICK" or v == "THICKOUTLINE" or v == "2" then
+        FontMagicDB.combatTextOutlineMode = "THICKOUTLINE"
+    else
+        FontMagicDB.combatTextOutlineMode = "OUTLINE"
+    end
+end
 if type(FontMagicDB.floatingTextGravity) ~= "number" then
     FontMagicDB.floatingTextGravity = GetResolvedSettingNumber({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" }, 1.0)
 end
@@ -784,6 +799,12 @@ end
 
 -- by updating the globals and
 -- any common FontObjects that already exist in the current client.
+--
+-- IMPORTANT: older FontMagic builds allowed changing extra rendering properties
+-- (shadow offset, monochrome flags, etc.) for Blizzard combat-text FontObjects.
+-- Those changes can persist for engine-defined FontObjects in some clients.
+-- To avoid "spaced out" / odd-looking healing text after upgrading, we treat
+-- Blizzard's rendering as authoritative and only change the font face.
 local function ApplyCombatTextFontPath(path)
     if type(path) ~= "string" or path == "" then return end
 
@@ -793,24 +814,787 @@ local function ApplyCombatTextFontPath(path)
     _G.DAMAGE_TEXT_FONT = path
     _G.COMBAT_TEXT_FONT  = path
 
-    local function TrySetFont(obj, size, flags)
-        if obj and type(obj.SetFont) == "function" then
-            pcall(obj.SetFont, obj, path, size, flags)
+    local FONT_OBJECTS = {
+        -- Common across many clients/eras
+        { name = "CombatTextFont",        defaultSize = 25 },
+        { name = "CombatTextFontOutline", defaultSize = 25 },
+        { name = "DamageFont",            defaultSize = 25 },
+        { name = "DamageFontOutline",     defaultSize = 25 },
+        { name = "CombatTextFontNormal",  defaultSize = 25 },
+        { name = "CombatTextFontSmall",   defaultSize = 20 },
+        { name = "DamageTextFont",        defaultSize = 25 },
+        { name = "DamageTextFontOutline", defaultSize = 25 },
+
+        -- Present on some modern/Retail builds and can control outgoing damage numbers.
+        { name = "DamageNumberFont",              defaultSize = 25 },
+        { name = "CombatDamageFont",              defaultSize = 25 },
+        { name = "CombatHealingAbsorbGlowFont",   defaultSize = 25 },
+        { name = "WorldFont",                     defaultSize = 25 },
+
+        -- Classic-era floating combat text often uses these FontObjects
+        { name = "SystemFont_World",              defaultSize = 25 },
+        { name = "SystemFont_World_ThickOutline", defaultSize = 25 },
+    }
+
+    local function NormalizeCombatTextStyle(name, obj)
+        if not obj then return end
+
+        -- Reset letter-spacing to Blizzard defaults (0) to prevent "+1 2 3 4" style output.
+        if type(obj.SetSpacing) == "function" then
+            pcall(obj.SetSpacing, obj, 0)
+        end
+
+        -- Reset shadow to Blizzard defaults used by SystemFont_World.
+        -- Restrict this to the scrolling combat text FontObjects we know Blizzard defines.
+        if name == "CombatTextFont" or name == "CombatTextFontOutline" then
+            if type(obj.SetShadowOffset) == "function" then
+                pcall(obj.SetShadowOffset, obj, 1, -1)
+            end
+            if type(obj.SetShadowColor) == "function" then
+                -- Alpha is optional on some clients.
+                local ok = pcall(obj.SetShadowColor, obj, 0, 0, 0, 1)
+                if not ok then
+                    pcall(obj.SetShadowColor, obj, 0, 0, 0)
+                end
+            end
         end
     end
 
-    -- A small best-effort list; these vary by client/era.
-    -- Some clients use CombatDamageFont/DamageNumberFont for "damage dealt" (outgoing) text.
-    TrySetFont(_G and _G.CombatTextFont,         25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontOutline,  25, "OUTLINE")
-    TrySetFont(_G and _G.DamageFont,             25, "OUTLINE")
-    TrySetFont(_G and _G.DamageFontOutline,      25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontNormal,   25, "OUTLINE")
-    TrySetFont(_G and _G.CombatTextFontSmall,    20, "OUTLINE")
-    TrySetFont(_G and _G.DamageTextFont,         25, "OUTLINE")
-    TrySetFont(_G and _G.DamageTextFontOutline,  25, "OUTLINE")
-    TrySetFont(_G and _G.DamageNumberFont,       25, "OUTLINE")
-    TrySetFont(_G and _G.CombatDamageFont,       25, "OUTLINE")
+    local function NormalizeFontFlagsConservative(flags)
+        -- Default behavior: preserve existing flags, but remove MONOCHROME leftovers
+        -- and avoid conflicting outline tokens.
+        if type(flags) ~= "string" or flags == "" then return "" end
+
+        local out = {}
+        local seen = {}
+        local hasOutline, hasThick = false, false
+
+        for token in tostring(flags):gmatch("[^,]+") do
+            local t = token:match("^%s*(.-)%s*$") or token
+            if t ~= "" then
+                local u = t:upper()
+                if u == "MONOCHROME" then
+                    -- drop
+                elseif u == "OUTLINE" then
+                    hasOutline = true
+                elseif u == "THICKOUTLINE" then
+                    hasThick = true
+                elseif not seen[u] then
+                    seen[u] = true
+                    out[#out + 1] = t
+                end
+            end
+        end
+
+        if hasThick then
+            out[#out + 1] = "THICKOUTLINE"
+        elseif hasOutline then
+            out[#out + 1] = "OUTLINE"
+        end
+
+        return table.concat(out, ",")
+    end
+
+    local function SafeCombatTextFlags(name, flags)
+        -- For scrolling combat text objects, apply the user-selected outline style.
+        -- Keep this constrained to Blizzard combat-text font objects to avoid collateral.
+        local lname = tostring(name or ""):lower()
+        if lname:find("^combattextfont") or lname:find("^damagefont") or lname:find("^damagetextfont") then
+            local mode = tostring(FontMagicDB and FontMagicDB.combatTextOutlineMode or "OUTLINE"):upper()
+            if mode == "NONE" or mode == "NO" or mode == "0" then
+                return ""
+            end
+            if mode == "THICK" or mode == "THICKOUTLINE" or mode == "2" then
+                return "THICKOUTLINE"
+            end
+            return "OUTLINE"
+        end
+
+        return NormalizeFontFlagsConservative(flags)
+    end
+
+    local function TrySetFontObjectFont(name, obj, defaultSize)
+        if not (obj and type(obj.SetFont) == "function") then return end
+
+        local size, flags
+        if type(obj.GetFont) == "function" then
+            local ok, _, s, f = pcall(obj.GetFont, obj)
+            if ok then
+                size, flags = s, f
+            end
+        end
+
+        local lname = tostring(name or ""):lower()
+        -- Use stable baseline sizes for Blizzard combat text font objects.
+        if lname:find("^combattextfont") or lname:find("^damagefont") or lname:find("^damagetextfont") then
+            size = tonumber(defaultSize) or 25
+        else
+            if type(size) ~= "number" then
+                size = tonumber(size)
+            end
+            if type(size) ~= "number" then
+                size = tonumber(defaultSize) or 25
+            end
+        end
+        if type(flags) ~= "string" then
+            -- If the object doesn't report flags, don't force any.
+            flags = ""
+        end
+        flags = SafeCombatTextFlags(name, flags)
+
+        pcall(obj.SetFont, obj, path, size, flags)
+        NormalizeCombatTextStyle(name, obj)
+    end
+
+    -- Best-effort: update existing FontObjects immediately. Some clients initialize
+    -- these when Blizzard_CombatText loads, so we also re-apply during ADDON_LOADED.
+    for _, def in ipairs(FONT_OBJECTS) do
+        local obj = _G and _G[def.name]
+        TrySetFontObjectFont(def.name, obj, def.defaultSize)
+    end
+
+    -- Also update live FontStrings under the combat text frames (some Classic clients
+    -- do not fully respect global DAMAGE_TEXT_FONT/COMBAT_TEXT_FONT changes at runtime).
+    local function ApplyToFrameFontStrings(rootName)
+        local root = _G and _G[rootName]
+        if not root then return end
+
+        local seen = {}
+        local maxDepth = 5
+
+        local function visit(f, depth)
+            if not f or depth > maxDepth then return end
+            if seen[f] then return end
+            seen[f] = true
+
+            if type(f.GetRegions) == "function" then
+                for _, r in ipairs({ f:GetRegions() }) do
+                    if r and type(r.GetObjectType) == "function" then
+                        local ok, typ = pcall(r.GetObjectType, r)
+                        if ok and typ == "FontString" and type(r.GetFont) == "function" and type(r.SetFont) == "function" then
+                            local ok2, _, size, flags = pcall(r.GetFont, r)
+                            if ok2 then
+                                if type(size) ~= "number" then size = 25 end
+                                if type(flags) ~= "string" then flags = "" end
+                                pcall(r.SetFont, r, path, size, flags)
+                                if type(r.SetSpacing) == "function" then
+                                    pcall(r.SetSpacing, r, 0)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if type(f.GetChildren) == "function" then
+                for _, child in ipairs({ f:GetChildren() }) do
+                    visit(child, depth + 1)
+                end
+            end
+        end
+
+        visit(root, 0)
+    end
+
+    ApplyToFrameFontStrings("CombatText")
+    ApplyToFrameFontStrings("CombatTextFrame")
+    ApplyToFrameFontStrings("FloatingCombatTextFrame")
+
+end
+
+-- ---------------------------------------------------------------------------
+-- Combat text spacing fix + debug
+-- ---------------------------------------------------------------------------
+-- In some setups (including upgrades from older builds), Blizzard scrolling
+-- combat text can end up with non-zero *letter spacing* on the FontStrings
+-- used for self events (heals, damage taken, etc.), producing "+1 2 3" output.
+--
+-- This block:
+--  1) forces letter spacing to 0 on the actual combat-text FontStrings
+--  2) safely removes only whitespace-like digit group separators (no CVar changes)
+--  3) provides gated debug tooling via `/fontmagic debug on|off|toggle|dump`
+
+_G.FontMagicCombatTextFix = (type(_G) == "table" and type(_G.FontMagicCombatTextFix) == "table") and _G.FontMagicCombatTextFix or {}
+_G.FontMagicCombatTextFix.wrap = _G.FontMagicCombatTextFix.wrap or { depth = 0, wrapped = {}, orig = {}, logCount = 0, logLimit = 150, lastSpacingScan = 0 }
+if type(_G.FontMagicCombatTextFix.spaceSeps) ~= "table" then
+    _G.FontMagicCombatTextFix.spaceSeps = { " ", "\194\160", "\226\128\175", "\226\128\137", "\226\128\135" } -- SP, NBSP, NNBSP, THIN, FIG
+end
+
+function _G.FontMagicCombatTextFix:IsDebugEnabled()
+    return (FontMagicDB and FontMagicDB.__fmDebugCombatText) and true or false
+end
+
+function _G.FontMagicCombatTextFix:DbgPrint(line)
+    line = tostring(line or "")
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(line)
+        return
+    end
+    if type(print) == "function" then
+        print(line)
+    end
+end
+
+function _G.FontMagicCombatTextFix:DbgLine(line)
+    self:DbgPrint("|cFF00FF00[FontMagic]|r " .. tostring(line or ""))
+end
+
+function _G.FontMagicCombatTextFix:PatternEscape(s)
+    if type(s) ~= "string" then return "" end
+    return (s:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
+end
+
+function _G.FontMagicCombatTextFix:IsNumericish(msg)
+    if type(msg) ~= "string" or msg == "" then return false end
+    if not msg:match("%d") then return false end
+
+    local s = msg
+    s = s:gsub("%d", "")
+    s = s:gsub("[+%-]", "")
+    s = s:gsub("[%(%)]", "")
+    s = s:gsub("[%[%]]", "")
+    s = s:gsub("[%{%}]", "")
+    s = s:gsub("%s", "")
+    if type(self.spaceSeps) == "table" then
+        for _, sep in ipairs(self.spaceSeps) do
+            if type(sep) == "string" and sep ~= "" then
+                s = s:gsub(sep, "")
+            end
+        end
+    end
+    s = s:gsub("[,%.']", "")
+    return s == ""
+end
+
+function _G.FontMagicCombatTextFix:SanitizeMessage(msg)
+    if type(msg) ~= "string" or msg == "" then return msg, false end
+    if not msg:match("%d") then return msg, false end
+    if not self:IsNumericish(msg) then return msg, false end
+
+    local out = msg
+    -- If the combat-text pipeline produces numeric strings with extra whitespace-like
+    -- separators (including NBSP/thin spaces), remove them. This is low-collateral
+    -- because we only apply it to numeric-only messages (digits/punct/signs).
+    if type(self.spaceSeps) == "table" then
+        for _, sep in ipairs(self.spaceSeps) do
+            if type(sep) == "string" and sep ~= "" then
+                out = out:gsub(self:PatternEscape(sep), "")
+            end
+        end
+    end
+    return out, out ~= msg
+end
+
+function _G.FontMagicCombatTextFix:VisibleWhitespace(msg)
+    if type(msg) ~= "string" then return tostring(msg) end
+    local out = msg
+    out = out:gsub("\194\160", "[NBSP]")
+    out = out:gsub("\226\128\175", "[NNBSP]")
+    out = out:gsub("\226\128\137", "[THIN]")
+    out = out:gsub("\226\128\135", "[FIG]")
+    out = out:gsub(" ", "[SP]")
+    out = out:gsub(",", "[,]")
+    out = out:gsub("%.", "[.]")
+    out = out:gsub("'", "[']")
+    return out
+end
+
+function _G.FontMagicCombatTextFix:DescribeSeparatorBytes(msg)
+    if type(msg) ~= "string" or msg == "" then return "" end
+    local parts = {}
+    local function add(label, bytes, needle)
+        if msg:find(needle, 1, true) then
+            parts[#parts + 1] = label .. "=" .. bytes
+        end
+    end
+    add("SP", "20", " ")
+    add("NBSP", "C2 A0", "\194\160")
+    add("NNBSP", "E2 80 AF", "\226\128\175")
+    add("THIN", "E2 80 89", "\226\128\137")
+    add("FIG", "E2 80 87", "\226\128\135")
+    add("COMMA", "2C", ",")
+    add("DOT", "2E", ".")
+    add("APOS", "27", "'")
+    return table.concat(parts, ", ")
+end
+
+function _G.FontMagicCombatTextFix:MaybeLogMessage(source, rawMsg, sanitizedMsg, changed)
+    if not self:IsDebugEnabled() then return end
+
+    local w = self.wrap
+    if type(w) ~= "table" then return end
+    w.logCount = (w.logCount or 0) + 1
+    local limit = tonumber(w.logLimit) or 150
+    if w.logCount > limit then
+        if w.logCount == (limit + 1) then
+            self:DbgLine("debug: combat-text log limit reached (" .. limit .. "); toggle '/fontmagic debug off' then on to reset.")
+        end
+        return
+    end
+
+    local raw = tostring(rawMsg or "")
+    self:DbgLine("CT[" .. tostring(source or "?") .. "] raw=" .. raw)
+
+    local vis = self:VisibleWhitespace(rawMsg)
+    local seps = self:DescribeSeparatorBytes(rawMsg)
+    if vis ~= raw or seps ~= "" then
+        self:DbgLine("CT vis=" .. tostring(vis) .. (seps ~= "" and (" seps=" .. seps) or ""))
+    end
+
+    if changed and sanitizedMsg ~= rawMsg then
+        self:DbgLine("CT sanitized=" .. tostring(sanitizedMsg))
+    end
+end
+
+function _G.FontMagicCombatTextFix:DumpFontInstance(name, obj)
+    if not obj then
+        self:DbgLine(tostring(name or "?") .. ": nil")
+        return
+    end
+
+    local otype = nil
+    if type(obj.GetObjectType) == "function" then
+        local ok, v = pcall(obj.GetObjectType, obj)
+        if ok then otype = v end
+    end
+
+    local path, size, flags = nil, nil, nil
+    if type(obj.GetFont) == "function" then
+        local ok, a, b, c = pcall(obj.GetFont, obj)
+        if ok then path, size, flags = a, b, c end
+    end
+
+    local spacing = nil
+    if type(obj.GetSpacing) == "function" then
+        local ok, v = pcall(obj.GetSpacing, obj)
+        if ok then spacing = v end
+    end
+
+    self:DbgLine(string.format(
+        "%s: type=%s font=%s size=%s flags=%s spacing=%s",
+        tostring(name or "?"),
+        tostring(otype),
+        tostring(path),
+        tostring(size),
+        tostring(flags),
+        tostring(spacing)
+    ))
+end
+
+function _G.FontMagicCombatTextFix:DumpCombatTextRegions(frameName, maxFS)
+    local f = _G and _G[frameName]
+    if not (f and type(f.GetRegions) == "function") then
+        self:DbgLine("CT regions: " .. tostring(frameName) .. " (no GetRegions)")
+        return
+    end
+
+    local regions = { f:GetRegions() }
+    local found = 0
+    local limit = tonumber(maxFS) or 6
+    for _, r in ipairs(regions) do
+        if r and type(r.GetObjectType) == "function" then
+            local ok, typ = pcall(r.GetObjectType, r)
+            if ok and typ == "FontString" then
+                found = found + 1
+                self:DumpFontInstance(frameName .. ":FontString" .. found, r)
+                if found >= limit then break end
+            end
+        end
+    end
+    if found == 0 then
+        self:DbgLine("CT regions: " .. tostring(frameName) .. " (no FontString regions found)")
+    end
+end
+
+function _G.FontMagicCombatTextFix:ZeroFontStringSpacingOnFrame(frameName)
+    local root = _G and _G[frameName]
+    if not root then return end
+
+    local seenFrames = {}
+    local maxDepth = 4
+
+    local function visit(f, depth)
+        if not f or depth > maxDepth then return end
+        if seenFrames[f] then return end
+        seenFrames[f] = true
+
+        if type(f.GetRegions) == "function" then
+            for _, r in ipairs({ f:GetRegions() }) do
+                if r and type(r.GetObjectType) == "function" then
+                    local ok, typ = pcall(r.GetObjectType, r)
+                    if ok and typ == "FontString" then
+                        if type(r.SetSpacing) == "function" then
+                            local before = nil
+                            if self:IsDebugEnabled() and type(r.GetSpacing) == "function" then
+                                local ok2, v = pcall(r.GetSpacing, r)
+                                if ok2 then before = v end
+                            end
+                            pcall(r.SetSpacing, r, 0)
+                            if self:IsDebugEnabled() and before ~= nil and tonumber(before) and tonumber(before) ~= 0 then
+                                self:DbgLine("CT spacing fix: " .. tostring(frameName) .. " FontString spacing was " .. tostring(before) .. " -> 0")
+                            end
+                        end
+
+                        -- If the *text itself* contains whitespace-like separators between digits,
+                        -- remove them. This fixes cases where the message string includes thin/NB
+                        -- spaces that look like "digit spacing".
+                        if type(r.GetText) == "function" and type(r.SetText) == "function" then
+                            local okT, txt = pcall(r.GetText, r)
+                            if okT and type(txt) == "string" and txt:match("%d") then
+                                local sanitized, changed = self:SanitizeMessage(txt)
+                                if changed and type(sanitized) == "string" and sanitized ~= txt then
+                                    pcall(r.SetText, r, sanitized)
+                                    if self:IsDebugEnabled() then
+                                        self:DbgLine("CT text sanitize: " .. self:VisibleWhitespace(txt) .. " -> " .. self:VisibleWhitespace(sanitized))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if type(f.GetChildren) == "function" then
+            for _, child in ipairs({ f:GetChildren() }) do
+                visit(child, depth + 1)
+            end
+        end
+    end
+
+    visit(root, 0)
+end
+
+function _G.FontMagicCombatTextFix:MaybeFixCombatTextFontStringSpacing(throttleSeconds)
+    local w = self.wrap
+    if type(w) ~= "table" then return end
+
+    local now = (type(GetTime) == "function") and GetTime() or 0
+    local throttle = tonumber(throttleSeconds) or 0
+    local last = tonumber(w.lastSpacingScan) or 0
+    if throttle > 0 and now > 0 and (now - last) < throttle then
+        return
+    end
+    w.lastSpacingScan = now
+
+    self:ZeroFontStringSpacingOnFrame("CombatText")
+    self:ZeroFontStringSpacingOnFrame("CombatTextFrame")
+    self:ZeroFontStringSpacingOnFrame("FloatingCombatTextFrame")
+end
+
+function _G.FontMagicCombatTextFix:MaybeLogDisplayedCombatText(frameName, source)
+    if not self:IsDebugEnabled() then return end
+
+    local w = self.wrap
+    if type(w) ~= "table" then return end
+
+    local now = (type(GetTime) == "function") and GetTime() or 0
+    local last = tonumber(w.lastDisplayedScan) or 0
+    if now > 0 and (now - last) < 0.05 then
+        return
+    end
+    w.lastDisplayedScan = now
+
+    local root = _G and _G[frameName]
+    if not root then return end
+
+    w.lastFSText = w.lastFSText or {}
+    local maxDepth = 4
+    local maxFS = 12
+    local seen = {}
+    local count = 0
+
+    local function visit(f, depth)
+        if not f or depth > maxDepth then return end
+        if seen[f] then return end
+        seen[f] = true
+
+        if type(f.GetRegions) == "function" then
+            for _, r in ipairs({ f:GetRegions() }) do
+                if r and type(r.GetObjectType) == "function" then
+                    local ok, typ = pcall(r.GetObjectType, r)
+                    if ok and typ == "FontString" then
+                        count = count + 1
+                        if count > maxFS then return end
+
+                        local txt = nil
+                        if type(r.GetText) == "function" then
+                            local okT, v = pcall(r.GetText, r)
+                            if okT then txt = v end
+                        end
+                        if type(txt) == "string" and txt ~= "" and txt:match("%d") then
+                            local lastTxt = w.lastFSText[r]
+                            if lastTxt ~= txt then
+                                w.lastFSText[r] = txt
+
+                                local p, s, fl = nil, nil, nil
+                                if type(r.GetFont) == "function" then
+                                    local okF, a, b, c = pcall(r.GetFont, r)
+                                    if okF then p, s, fl = a, b, c end
+                                end
+                                local sp = nil
+                                if type(r.GetSpacing) == "function" then
+                                    local okS, v = pcall(r.GetSpacing, r)
+                                    if okS then sp = v end
+                                end
+                                local sc = nil
+                                if type(r.GetScale) == "function" then
+                                    local okSc, v = pcall(r.GetScale, r)
+                                    if okSc then sc = v end
+                                end
+
+                                self:DbgLine("CT displayed[" .. tostring(source or "?") .. "] " .. tostring(frameName) .. " FS" .. tostring(count) .. " text=" .. tostring(txt))
+                                self:DbgLine("CT displayed vis=" .. self:VisibleWhitespace(txt) .. " seps=" .. self:DescribeSeparatorBytes(txt))
+                                self:DbgLine("CT displayed font=" .. tostring(p) .. " size=" .. tostring(s) .. " flags=" .. tostring(fl) .. " spacing=" .. tostring(sp) .. " scale=" .. tostring(sc))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if type(f.GetChildren) == "function" then
+            for _, child in ipairs({ f:GetChildren() }) do
+                visit(child, depth + 1)
+                if count > maxFS then return end
+            end
+        end
+    end
+
+    visit(root, 0)
+end
+
+function _G.FontMagicCombatTextFix:OnCombatTextMessage(source, message, ...)
+    -- Always keep spacing/flags sanitized. CombatText.AddMessage may be invoked with
+    -- a non-string payload on some clients, so don't gate the fixer on arg types.
+    self:MaybeFixCombatTextFontStringSpacing(0.15)
+
+    if not self:IsDebugEnabled() then return end
+
+    local t = type(message)
+    if t == "string" and message ~= "" and message:match("%d") then
+        local sanitized, changed = self:SanitizeMessage(message)
+        if sanitized == nil then sanitized = message end
+        self:MaybeLogMessage(source, message, sanitized, changed)
+    else
+        -- Still log that something happened (helps diagnose missing output).
+        self:DbgLine("CT[" .. tostring(source or "?") .. "] argType=" .. tostring(t) .. " arg=" .. tostring(message))
+    end
+
+    -- Post-scan the live FontStrings to capture the *actual* displayed text/state.
+    self:MaybeLogDisplayedCombatText("CombatText", source)
+end
+
+function _G.FontMagicCombatTextFix:SendTestCombatText()
+    local msg = "FontMagic TEST +1,234,567"
+    local targets = { "CombatText", "CombatTextFrame", "FloatingCombatTextFrame" }
+
+    local function tryCall(label, fn, ...)
+        if type(fn) ~= "function" then return false end
+        local ok, err = pcall(fn, ...)
+        if ok then
+            self:DbgLine("debug test: " .. tostring(label) .. " ok")
+            return true
+        end
+        self:DbgLine("debug test: " .. tostring(label) .. " failed: " .. tostring(err))
+        return false
+    end
+
+    for _, frameName in ipairs(targets) do
+        local f = _G and _G[frameName]
+        if f and type(f.AddMessage) == "function" then
+            -- Retail 12.x CombatText expects a ColorMixin in some call paths; passing
+            -- only (r,g,b) can error. Try the most compatible forms first.
+            if tryCall(frameName .. ":AddMessage(msg,r,g,b,a)", f.AddMessage, f, msg, 0, 1, 0, 1) then return true end
+            if tryCall(frameName .. ":AddMessage(msg,r,g,b)", f.AddMessage, f, msg, 0, 1, 0) then return true end
+            if tryCall(frameName .. ":AddMessage(msg)", f.AddMessage, f, msg) then return true end
+        end
+    end
+
+    self:DbgLine("debug test: no CombatText* frame accepted AddMessage()")
+    return false
+end
+
+function _G.FontMagicCombatTextFix:PrintDebugSnapshot()
+    self:DbgLine("debug snapshot begin")
+
+    local loc = (type(GetLocale) == "function") and GetLocale() or nil
+    self:DbgLine("locale=" .. tostring(loc))
+
+    if type(FontMagicDB) == "table" then
+        self:DbgLine("FontMagicDB.selectedFont=" .. tostring(FontMagicDB.selectedFont))
+        local masterOff = (FontMagicDB.combatMasterOffByFontMagic and type(FontMagicDB.combatMasterSnapshot) == "table") and true or false
+        self:DbgLine("FontMagicDB.combatMasterOffByFontMagic=" .. tostring(masterOff))
+    end
+    self:DbgLine("globals: COMBAT_TEXT_FONT=" .. tostring(_G and _G.COMBAT_TEXT_FONT) .. " DAMAGE_TEXT_FONT=" .. tostring(_G and _G.DAMAGE_TEXT_FONT))
+
+    local breakUp = DoesCVarExist("breakUpLargeNumbers") and GetCVarString("breakUpLargeNumbers") or nil
+    local localeFmt = DoesCVarExist("useLocaleNumberFormat") and GetCVarString("useLocaleNumberFormat") or nil
+    self:DbgLine("CVar breakUpLargeNumbers=" .. tostring(breakUp))
+    self:DbgLine("CVar useLocaleNumberFormat=" .. tostring(localeFmt))
+
+    self:DbgLine("LARGE_NUMBER_SEPERATOR=" .. tostring(_G and _G.LARGE_NUMBER_SEPERATOR))
+    self:DbgLine("LARGE_NUMBER_SEPARATOR=" .. tostring(_G and _G.LARGE_NUMBER_SEPARATOR))
+
+    if type(BreakUpLargeNumbers) == "function" then
+        local ok, ex = pcall(BreakUpLargeNumbers, 1234567)
+        if ok then
+            self:DbgLine("BreakUpLargeNumbers(1234567)=" .. tostring(ex) .. " vis=" .. self:VisibleWhitespace(ex) .. " seps=" .. self:DescribeSeparatorBytes(ex))
+        else
+            self:DbgLine("BreakUpLargeNumbers(1234567)=<error> " .. tostring(ex))
+        end
+    else
+        self:DbgLine("BreakUpLargeNumbers=<missing>")
+    end
+
+    self:DumpFontInstance("CombatTextFont", _G and _G.CombatTextFont)
+    self:DumpFontInstance("CombatTextFontOutline", _G and _G.CombatTextFontOutline)
+    self:DumpFontInstance("DamageFont", _G and _G.DamageFont)
+    self:DumpFontInstance("DamageFontOutline", _G and _G.DamageFontOutline)
+    self:DumpFontInstance("DamageNumberFont", _G and _G.DamageNumberFont)
+    self:DumpFontInstance("CombatDamageFont", _G and _G.CombatDamageFont)
+    self:DumpFontInstance("WorldFont", _G and _G.WorldFont)
+    self:DumpFontInstance("SystemFont_World", _G and _G.SystemFont_World)
+    self:DumpFontInstance("SystemFont_World_ThickOutline", _G and _G.SystemFont_World_ThickOutline)
+    self:DumpFontInstance("CombatText", _G and _G.CombatText)
+    self:DumpFontInstance("CombatTextFrame", _G and _G.CombatTextFrame)
+    self:DumpFontInstance("FloatingCombatTextFrame", _G and _G.FloatingCombatTextFrame)
+
+    local w = self.wrap
+    self:DbgLine("hooks: CombatText_AddMessage=" .. tostring(w and w.wrapped and w.wrapped["CombatText_AddMessage"])
+        .. " CombatText.AddMessage=" .. tostring(w and w.wrapped and w.wrapped["CombatText.AddMessage"])
+        .. " CombatTextFrame.AddMessage=" .. tostring(w and w.wrapped and w.wrapped["CombatTextFrame.AddMessage"])
+        .. " FloatingCombatTextFrame.AddMessage=" .. tostring(w and w.wrapped and w.wrapped["FloatingCombatTextFrame.AddMessage"]))
+
+    -- Key combat-text CVars (helps explain when messages don't show).
+    local function cvarLine(name)
+        if DoesCVarExist(name) then
+            self:DbgLine("CVar " .. tostring(name) .. "=" .. tostring(GetCVarString(name)))
+        end
+    end
+    local function cvarGroup(base)
+        if type(base) ~= "string" or base == "" then return end
+        cvarLine(base)
+        cvarLine(base .. "_v2")
+        cvarLine(base .. "_V2")
+        cvarLine(base .. "_v3")
+        cvarLine(base .. "_V3")
+    end
+    cvarLine("enableFloatingCombatText")
+    cvarLine("enableCombatText")
+    cvarGroup("WorldTextScale")
+    cvarGroup("WorldTextGravity")
+    cvarGroup("WorldTextRampDuration")
+    cvarGroup("floatingCombatTextCombatHealing")
+    cvarGroup("floatingCombatTextCombatDamage")
+    cvarGroup("floatingCombatTextCombatLogPeriodicSpells")
+
+    if type(FontMagicDB) == "table" and type(FontMagicDB.incomingOverrides) == "table" then
+        self:DbgLine("FontMagicDB.incomingOverrides.incomingDamage=" .. tostring(FontMagicDB.incomingOverrides.incomingDamage))
+        self:DbgLine("FontMagicDB.incomingOverrides.incomingHealing=" .. tostring(FontMagicDB.incomingOverrides.incomingHealing))
+    end
+    if type(FontMagicDB) == "table" then
+        self:DbgLine("FontMagicDB.combatTextOutlineMode=" .. tostring(FontMagicDB.combatTextOutlineMode))
+    end
+
+    if type(COMBAT_TEXT_TYPE_INFO) == "table" then
+        local function ctInfoLine(k)
+            local t = COMBAT_TEXT_TYPE_INFO[k]
+            if t == nil then
+                self:DbgLine("CT_INFO[" .. tostring(k) .. "]=nil")
+                return
+            end
+            if type(t) == "table" then
+                self:DbgLine("CT_INFO[" .. tostring(k) .. "].cvar=" .. tostring(t.cvar))
+                return
+            end
+            self:DbgLine("CT_INFO[" .. tostring(k) .. "] type=" .. type(t))
+        end
+        ctInfoLine("HEAL")
+        ctInfoLine("HEAL_CRIT")
+        ctInfoLine("PERIODIC_HEAL")
+        ctInfoLine("PERIODIC_HEAL_CRIT")
+        self:DbgLine("CT incoming healing present=" .. tostring((COMBAT_TEXT_TYPE_INFO.HEAL ~= nil or COMBAT_TEXT_TYPE_INFO.PERIODIC_HEAL ~= nil) and true or false))
+    else
+        self:DbgLine("COMBAT_TEXT_TYPE_INFO=nil")
+    end
+
+    self:DumpCombatTextRegions("CombatText", 6)
+    self:DumpCombatTextRegions("CombatTextFrame", 6)
+    self:DumpCombatTextRegions("FloatingCombatTextFrame", 6)
+
+    self:DbgLine("debug snapshot end")
+end
+
+function _G.FontMagicCombatTextFix:WrapGlobalCombatTextFunction(fnName)
+    local w = self.wrap
+    if not (w and w.wrapped) then return end
+    if w.wrapped[fnName] then return end
+
+    local selfRef = self
+    if type(hooksecurefunc) ~= "function" then return end
+    if not (_G and type(_G[fnName]) == "function") then return end
+
+    local ok = pcall(hooksecurefunc, fnName, function(message, ...)
+        pcall(selfRef.OnCombatTextMessage, selfRef, fnName, message, ...)
+    end)
+    if ok then
+        w.wrapped[fnName] = true
+    end
+end
+
+function _G.FontMagicCombatTextFix:WrapCombatTextFrameMethod(frameName, methodName)
+    local w = self.wrap
+    if not (w and w.wrapped) then return end
+
+    local key = tostring(frameName) .. "." .. tostring(methodName)
+    if w.wrapped[key] then return end
+
+    local f = _G and _G[frameName]
+    if not (f and type(f[methodName]) == "function") then return end
+
+    local selfRef = self
+    if type(hooksecurefunc) ~= "function" then return end
+
+    local ok = pcall(hooksecurefunc, f, methodName, function(_, message, ...)
+        pcall(selfRef.OnCombatTextMessage, selfRef, key, message, ...)
+    end)
+    if ok then
+        w.wrapped[key] = true
+    end
+end
+
+function _G.FontMagicCombatTextFix:EnsureCombatTextPatches()
+    self:WrapGlobalCombatTextFunction("CombatText_AddMessage")
+    self:WrapCombatTextFrameMethod("CombatText", "AddMessage")
+    self:WrapCombatTextFrameMethod("CombatTextFrame", "AddMessage")
+    self:WrapCombatTextFrameMethod("FloatingCombatTextFrame", "AddMessage")
+
+    self:MaybeFixCombatTextFontStringSpacing(0)
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        local selfRef = self
+        C_Timer.After(0, function()
+            pcall(selfRef.MaybeFixCombatTextFontStringSpacing, selfRef, 0)
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatText", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "FloatingCombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapGlobalCombatTextFunction, selfRef, "CombatText_AddMessage")
+        end)
+        C_Timer.After(0.2, function()
+            pcall(selfRef.MaybeFixCombatTextFontStringSpacing, selfRef, 0)
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatText", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "FloatingCombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapGlobalCombatTextFunction, selfRef, "CombatText_AddMessage")
+        end)
+        C_Timer.After(1.0, function()
+            pcall(selfRef.MaybeFixCombatTextFontStringSpacing, selfRef, 0)
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatText", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "CombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapCombatTextFrameMethod, selfRef, "FloatingCombatTextFrame", "AddMessage")
+            pcall(selfRef.WrapGlobalCombatTextFunction, selfRef, "CombatText_AddMessage")
+        end)
+    end
 end
 
 local function ApplyFloatingTextMotionSettings()
@@ -3315,6 +4099,49 @@ local function BuildCombatOptionsUI()
         y = y - CHECK_ROW_H - 10
     end
 
+    y = AddHeader("Text style", y)
+    do
+        local function outlineLabel(mode)
+            local m = tostring(mode or "OUTLINE"):upper()
+            if m == "NONE" or m == "NO" or m == "0" then return "No Outline" end
+            if m == "THICK" or m == "THICKOUTLINE" or m == "2" then return "Thick Outline" end
+            return "Thin Outline"
+        end
+
+        local btn = CreateFrame("Button", nil, combatContent, "UIPanelButtonTemplate")
+        btn:SetSize(190, 22)
+        btn:SetPoint("TOPLEFT", combatContent, "TOPLEFT", 0, y)
+        btn:SetText("Outline: " .. outlineLabel(FontMagicDB and FontMagicDB.combatTextOutlineMode))
+        btn:SetScript("OnClick", function(self)
+            FontMagicDB = FontMagicDB or {}
+            local current = tostring(FontMagicDB.combatTextOutlineMode or "OUTLINE"):upper()
+            local nextMode
+            if current == "NONE" or current == "NO" or current == "0" then
+                nextMode = "OUTLINE"
+            elseif current == "OUTLINE" or current == "1" then
+                nextMode = "THICKOUTLINE"
+            else
+                nextMode = "NONE"
+            end
+            FontMagicDB.combatTextOutlineMode = nextMode
+            self:SetText("Outline: " .. outlineLabel(nextMode))
+
+            local path = nil
+            local key = FontMagicDB.selectedFont
+            if type(key) == "string" and key ~= "" then
+                path = ResolveFontPathFromKey(key)
+            end
+            if not path then
+                CaptureBlizzardDefaultFonts()
+                path = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH or "Fonts\\FRIZQT__.TTF"
+            end
+            ApplyCombatTextFontPath(path)
+        end)
+        AttachTooltip(btn, "Combat text outline style", "Cycles combat-text outlines between No Outline, Thin Outline, and Thick Outline.\n\nApplies to Blizzard combat-text fonts (including self scrolling combat text) without touching global number-format CVars.")
+        table.insert(combatWidgets, btn)
+        y = y - 30
+    end
+
     y = AddHeader("Floating text motion", y)
     y = AddSectionNote(y, "Tune movement behavior for world-space floating numbers. Changes apply immediately when supported.")
     local gravityName = ResolveCVarName({ "WorldTextGravity_v2", "WorldTextGravity_V2", "WorldTextGravity", "floatingCombatTextGravity_v2", "floatingCombatTextGravity_V2", "floatingCombatTextGravity" })
@@ -3654,6 +4481,7 @@ local function ResetCombatOptionsOnly()
     FontMagicDB.combatOverrides = {}
     FontMagicDB.extraCombatOverrides = {}
     FontMagicDB.incomingOverrides = {}
+    FontMagicDB.combatTextOutlineMode = "OUTLINE"
     FontMagicDB.combatMasterSnapshot = nil
     FontMagicDB.combatMasterOffByFontMagic = nil
 
@@ -3772,6 +4600,19 @@ local function ResetCombatOptionsOnly()
     ApplyCombatTextAboveNameplates(false)
 
     -- Refresh UI + slider values immediately.
+    do
+        local path = nil
+        local key = FontMagicDB and FontMagicDB.selectedFont
+        if type(key) == "string" and key ~= "" then
+            path = ResolveFontPathFromKey(key)
+        end
+        if not path then
+            CaptureBlizzardDefaultFonts()
+            path = DEFAULT_DAMAGE_TEXT_FONT or DEFAULT_COMBAT_TEXT_FONT or DEFAULT_FONT_PATH or "Fonts\\FRIZQT__.TTF"
+        end
+        ApplyCombatTextFontPath(path)
+    end
+
     RefreshScaleControl()
     RefreshCombatTextCVars()
     UpdateMainCombatCheckboxes()
@@ -3852,6 +4693,7 @@ SLASH_FCT1, SLASH_FCT2 = "/FCT", "/fct"
 SLASH_FCT3, SLASH_FCT4 = "/FLOAT", "/float"
 SLASH_FCT5, SLASH_FCT6 = "/FLOATING", "/floating"
 SLASH_FCT7, SLASH_FCT8 = "/FLOATINGTEXT", "/floatingtext"
+SLASH_FCT9, SLASH_FCT10 = "/FONTMAGIC", "/fontmagic"
 
 local function PrepareFontMagicWindowForDisplay()
     if not frame then return end
@@ -3903,14 +4745,79 @@ SlashCmdList["FCT"] = function(msg)
     -- normalise message for case-insensitive matching and remove whitespace
     msg = tostring(msg or ""):match("^%s*(.-)%s*$"):lower()
 
+    if msg:match("^debug") then
+        local arg = msg:match("^debug%s*(.-)%s*$") or ""
+        local ct = _G and _G.FontMagicCombatTextFix
+
+        if arg == "test" then
+            if ct then
+                if type(ct.EnsureCombatTextPatches) == "function" then
+                    pcall(ct.EnsureCombatTextPatches, ct)
+                end
+                if type(ct.SendTestCombatText) == "function" then
+                    pcall(ct.SendTestCombatText, ct)
+                end
+                if type(ct.PrintDebugSnapshot) == "function" then
+                    pcall(ct.PrintDebugSnapshot, ct)
+                end
+            end
+            return
+        end
+
+        if arg == "" or arg == "toggle" then
+            FontMagicDB.__fmDebugCombatText = not FontMagicDB.__fmDebugCombatText
+        elseif arg == "on" or arg == "1" or arg == "true" then
+            FontMagicDB.__fmDebugCombatText = true
+        elseif arg == "off" or arg == "0" or arg == "false" then
+            FontMagicDB.__fmDebugCombatText = false
+        elseif arg == "dump" then
+            -- no state change
+        else
+            if ct and ct.DbgLine then
+                ct:DbgLine("usage: /fontmagic debug [on|off|toggle|dump|test]")
+            else
+                print("FontMagic: usage: /fontmagic debug [on|off|toggle|dump|test]")
+            end
+        end
+
+        -- Reset per-session counters so the next enable gives fresh logs.
+        if FontMagicDB.__fmDebugCombatText then
+            if ct and type(ct.wrap) == "table" then
+                ct.wrap.logCount = 0
+                ct.wrap.lastFSText = {}
+                ct.wrap.lastDisplayedScan = 0
+            end
+            if ct and ct.DbgLine then
+                ct:DbgLine("combat-text debug ON (logging numeric-ish messages)")
+            end
+        else
+            if ct and ct.DbgLine then
+                ct:DbgLine("combat-text debug OFF")
+            end
+        end
+
+        if ct then
+            if type(ct.EnsureCombatTextPatches) == "function" then
+                pcall(ct.EnsureCombatTextPatches, ct)
+            end
+            if type(ct.PrintDebugSnapshot) == "function" then
+                pcall(ct.PrintDebugSnapshot, ct)
+            end
+        end
+        return
+    end
+
     if msg == "hide" then
-        if minimapButton then minimapButton:Hide() end
+        if type(FontMagicDB) ~= "table" then FontMagicDB = {} end
         FontMagicDB.minimapHide = true
+        if minimapButton then minimapButton:Hide() end
         print("|cFF00FF00[FontMagic]|r Minimap icon hidden. Use /float show to restore.")
         return
     elseif msg == "show" then
-        if minimapButton then minimapButton:Show() end
+        if type(FontMagicDB) ~= "table" then FontMagicDB = {} end
         FontMagicDB.minimapHide = false
+        if minimapButton then minimapButton:Show() end
+        print("|cFF00FF00[FontMagic]|r Minimap icon shown.")
         return
     end
 
@@ -4099,6 +5006,24 @@ if FontMagicDB and FontMagicDB.minimapHide then
     minimapButton:Hide()
 end
 
+-- Apply minimap button preferences (angle + visibility). We call this again on
+-- ADDON_LOADED/PLAYER_LOGIN because some clients only guarantee SavedVariables
+-- are populated by then.
+local function ApplyMinimapButtonPreferences()
+    if not minimapButton then return end
+    if type(FontMagicDB) ~= "table" then return end
+
+    if type(FontMagicDB.minimapAngle) == "number" then
+        PositionMinimapButton(minimapButton, FontMagicDB.minimapAngle)
+    end
+
+    if FontMagicDB.minimapHide then
+        minimapButton:Hide()
+    else
+        minimapButton:Show()
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- Combat text override bootstrap
 -- ---------------------------------------------------------------------------
@@ -4127,6 +5052,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         RegisterOptionsCategory()
         CaptureBlizzardDefaultFonts()
         ApplySavedCombatFont()
+        if _G and _G.FontMagicCombatTextFix and type(_G.FontMagicCombatTextFix.EnsureCombatTextPatches) == "function" then
+            pcall(_G.FontMagicCombatTextFix.EnsureCombatTextPatches, _G.FontMagicCombatTextFix)
+        end
         ApplyAllSavedOverrides()
         RefreshCombatTextCVars()
         -- Apply account-wide layering preference
@@ -4142,6 +5070,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             C_Timer.After(1.0, UpdateMainCombatCheckboxes)
         end
 
+        -- Re-apply minimap icon state now that SavedVariables are definitely loaded.
+        pcall(function()
+            if type(FontMagicDB) ~= "table" then FontMagicDB = {} end
+            if FontMagicDB.minimapAngle == nil then FontMagicDB.minimapAngle = 225 end
+            if FontMagicDB.minimapHide == nil then FontMagicDB.minimapHide = false end
+            if ApplyMinimapButtonPreferences then ApplyMinimapButtonPreferences() end
+        end)
+
 
     elseif event == "ADDON_LOADED" then
         -- SavedVariables are guaranteed to be available on our own ADDON_LOADED.
@@ -4151,14 +5087,28 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             MigrateSavedFontKeys()
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
+            if _G and _G.FontMagicCombatTextFix and type(_G.FontMagicCombatTextFix.EnsureCombatTextPatches) == "function" then
+                pcall(_G.FontMagicCombatTextFix.EnsureCombatTextPatches, _G.FontMagicCombatTextFix)
+            end
             ApplyFloatingTextMotionSettings()
+
+            -- Ensure minimap icon respects saved hide/angle (SavedVariables are guaranteed here).
+            pcall(function()
+                if type(FontMagicDB) ~= "table" then FontMagicDB = {} end
+                if FontMagicDB.minimapAngle == nil then FontMagicDB.minimapAngle = 225 end
+                if FontMagicDB.minimapHide == nil then FontMagicDB.minimapHide = false end
+                if ApplyMinimapButtonPreferences then ApplyMinimapButtonPreferences() end
+            end)
         end
 
         -- If Blizzard_CombatText loads after us, re-apply incoming overrides (if any).
-        if arg1 == "Blizzard_CombatText" then
+        if arg1 == "Blizzard_CombatText" or arg1 == "Blizzard_FloatingCombatText" then
             MigrateSavedFontKeys()
             CaptureBlizzardDefaultFonts()
             ApplySavedCombatFont()
+            if _G and _G.FontMagicCombatTextFix and type(_G.FontMagicCombatTextFix.EnsureCombatTextPatches) == "function" then
+                pcall(_G.FontMagicCombatTextFix.EnsureCombatTextPatches, _G.FontMagicCombatTextFix)
+            end
             ApplyIncomingOverrides()
             ApplyFloatingTextMotionSettings()
             RefreshCombatTextCVars()
